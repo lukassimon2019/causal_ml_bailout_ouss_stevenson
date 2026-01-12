@@ -1,0 +1,58 @@
+---
+title: "CML Group Work"
+output: html_document
+date: "2026-01-10"
+---
+
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(modelsummary)
+library(DoubleML)
+library(haven)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r CashBail}
+summary(CashBail)
+View(CashBail)
+```
+
+```{r}
+# 1. Load the data (Make sure the file is in your project folder!)
+df <- read_dta("CashBail.dta")
+
+# 2. CREATE the df_analysis object (The "<-" is the key!)
+df_analysis <- df %>%
+  mutate(
+    # Create a post-reform dummy (Feb 2018)
+    post = if_else(arrdate >= as.Date("2018-02-21"), 1, 0),
+    # Use the eligibility column from the paper
+    is_eligible = if_else(eligible == 1, 1, 0),
+    # The DiD Interaction
+    treatment = post * is_eligible
+  )
+
+# 3. Now verify it exists
+head(df_analysis)
+```
+
+
+```{r}
+# Filter for Pre-reform only to check baseline balance
+pre_reform <- df_analysis %>% filter(post == 0)
+
+# Create a list of covariates (X) you'll use in Double ML
+covariates <- c("age", "prior_arrests", "prior_ftas", "male", "black")
+
+datasummary_balance(~is_eligible, data = pre_reform[c(covariates, "is_eligible")])
+```
+
+
+
