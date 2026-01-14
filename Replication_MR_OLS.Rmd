@@ -1,0 +1,182 @@
+---
+title: "CML Group Work"
+output: html_document
+date: "2026-01-14"
+---
+
+
+# ==============================================================================
+# REPLICATION: Ouss & Stevenson (2023)
+# Project: Causal ML Group Work - Task 1.3a
+# ==============================================================================
+```{r}
+library(fixest)
+library(tidyverse)
+library(haven)    
+library(DoubleML)
+library(mlr3)
+library(mlr3learners)
+
+CashBail <- read_dta("CashBail.dta")
+```
+
+# Converting Stata numeric date to R Date
+```{r}
+CashBail$baildate <- as.Date(CashBail$baildate, origin = "1960-01-01")
+```
+
+## Data Preparation
+```{r}
+CashBail <- CashBail %>%
+  mutate(
+    # Creating past_fel from prior_fel 
+    past_fel = as.numeric(prior_fel > 0),
+    
+    # Creating Denied 
+    Denied = as.numeric(initialbailtype == "Denied"),
+    
+    # Addressing NAs
+    income_missing = as.numeric(is.na(defendantzipmedianhouseholdincom)),
+    poverty_missing = as.numeric(is.na(PctBelPov)),
+    
+    defendantzipmedianhouseholdincom = ifelse(is.na(defendantzipmedianhouseholdincom), 
+                                              mean(defendantzipmedianhouseholdincom, na.rm = TRUE), 
+                                              defendantzipmedianhouseholdincom),
+    
+    PctBelPov = ifelse(is.na(PctBelPov), 
+                       mean(PctBelPov, na.rm = TRUE), 
+                       PctBelPov),
+    
+    # Re-calculate or ensure PostElig is correct
+    PostElig = EligibleOffense * Post,
+  
+    off = as.factor(off),
+    yq = as.factor(yq),
+    DOW = as.factor(DOW), 
+    CommissionerName_input = as.factor(CommissionerName_input) 
+  )
+
+covariates <- c("defendantageatarrest", "male", "defendantisblack", "Hisp", 
+                "White", "defendantzipmedianhouseholdincom", "PctBelPov", 
+                "PD", "felony", "prior_FTA", "prior_9y", "past_fel", "income_missing", "poverty_missing")
+```
+
+## Replicating Table 3: DiD Estimates of policy effect on ROR and Jail
+```{r}
+
+# Column 1: ROR (No controls)
+res_ror_1 <- feols(ROR ~ PostElig + EligibleOffense + Post, 
+                   cluster = ~off, data = CashBail)
+
+# Column 2: ROR (With controls and Fixed Effects)
+res_ror_2 <- feols(ROR ~ PostElig + Post + .[covariates] | off + yq, 
+                   cluster = ~off, data = CashBail)
+
+# Column 3: Jail (No controls)
+res_jail_3 <- feols(Jail3days ~ PostElig + EligibleOffense + Post, 
+                    cluster = ~off, data = CashBail)
+
+# Column 4: Jail (With controls and Fixed Effects)
+res_jail_4 <- feols(Jail3days ~ PostElig + Post + .[covariates] | off + yq, 
+                    cluster = ~off, data = CashBail)
+```
+
+
+## Pre-period Means & Models
+```{r}
+mean_ror_pre <- CashBail %>% 
+  filter(EligibleOffense == 1, Post == 0) %>% 
+  summarise(mean = mean(ROR, na.rm = TRUE)) %>% pull(mean)
+
+mean_jail_pre <- CashBail %>% 
+  filter(EligibleOffense == 1, Post == 0) %>% 
+  summarise(mean = mean(Jail3days, na.rm = TRUE)) %>% pull(mean)
+
+# Model (1): ROR No Controls
+m1 <- feols(ROR ~ PostElig + Post + EligibleOffense, cluster = ~off, data = CashBail)
+
+# Model (2): ROR With Controls & Fixed Effects
+m2 <- feols(ROR ~ PostElig + Post + .[covariates] | off + yq, cluster = ~off, data = CashBail)
+
+# Model (3): Jail No Controls
+m3 <- feols(Jail3days ~ PostElig + Post + EligibleOffense, cluster = ~off, data = CashBail)
+
+# Model (4): Jail With Controls & Fixed Effects
+m4 <- feols(Jail3days ~ PostElig + Post + .[covariates] | off + yq, cluster = ~off, data = CashBail)
+```
+
+
+## SUMMARY TABLE
+```{r}
+
+
+table_3 <- etable(m1, m2, m3, m4,
+       headers = list("ROR" = 2, "Jail" = 2),
+       dict = c(PostElig = "Eligible x Post 02/21"),
+       keep = "Eligible x Post 02/21",
+       
+       extralines = list(
+         "Controls"      = c("No", "Yes", "No", "Yes"),
+         "Mean dep. var." = c(round(mean_ror_pre, 3), round(mean_ror_pre, 3), 
+                             round(mean_jail_pre, 3), round(mean_jail_pre, 3))
+       ),
+      
+       digits = 4, 
+       digits.stats = "r0", 
+       fitstat = ~n,     
+       style.df = style.df(depvar.title = "", fixef.suffix = ""),
+       notes = "Standard errors, clustered at the offense level, are in parentheses."
+)
+
+print(table_3)
+```
+
+## Replicating Table 5: DiD Estimates of policy effect on FTA and Recidivism
+
+```{r}
+mean_fta_pre <- CashBail %>% 
+  filter(EligibleOffense == 1, Post == 0) %>% 
+  summarise(mean = mean(hasfta, na.rm = TRUE)) %>% pull(mean)
+
+mean_rec_pre <- CashBail %>% 
+  filter(EligibleOffense == 1, Post == 0) %>% 
+  summarise(mean = mean(Rec6mo, na.rm = TRUE)) %>% pull(mean)
+
+# Model (1): FTA No Controls
+m5_1 <- feols(hasfta ~ PostElig + Post + EligibleOffense, cluster = ~off, data = CashBail)
+
+# Model (2): FTA With Controls & Fixed Effects
+m5_2 <- feols(hasfta ~ PostElig + Post + .[covariates] | off + yq, 
+              cluster = ~off, data = CashBail)
+
+# Model (3): Recidivism No Controls
+m5_3 <- feols(Rec6mo ~ PostElig + Post + EligibleOffense, cluster = ~off, data = CashBail)
+
+# Model (4): Recidivism With Controls & Fixed Effects
+m5_4 <- feols(Rec6mo ~ PostElig + Post + .[covariates] | off + yq, 
+              cluster = ~off, data = CashBail)
+
+#  SUMMARY TABLE 5
+table_5 <- etable(m5_1, m5_2, m5_3, m5_4,
+       headers = list("FTA" = 2, "Recidivism" = 2),
+       dict = c(PostElig = "Eligible x Post 02/21"),
+       keep = "Eligible x Post 02/21",
+       extralines = list(
+         "Controls"      = c("No", "Yes", "No", "Yes"),
+         "Mean dep. var." = c(round(mean_fta_pre, 3), round(mean_fta_pre, 3), 
+                             round(mean_rec_pre, 3), round(mean_rec_pre, 3))
+       ),
+       digits = 4, 
+       digits.stats = "r0",
+       fitstat = ~n,
+       style.df = style.df(depvar.title = "", fixef.suffix = ""),
+       notes = "Standard errors, clustered at the offense level, are in parentheses."
+)
+
+print(table_5)
+```
+
+
+
+
+
