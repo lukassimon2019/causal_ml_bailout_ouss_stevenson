@@ -5,13 +5,16 @@
 #-----------------------------------------------------------------------------
 
 doubleML_did_cs <- function(data, y_var, d_var, t_var, x_vars, methods, cf = 5, 
-                            feature_eng = FALSE, bin_cut = 0.02, corr_cut = 0.9) {
+                            feature_eng = FALSE, bin_cut = 0.02, corr_cut = 0.9, cluster_var = NULL) {
   
   Y  <- data[[y_var]]
   D  <- as.numeric(data[[d_var]])
   Tt <- as.numeric(data[[t_var]])
   X_0  <- as.matrix(data[, x_vars])
   n  <- length(Y)
+  if(!is.null(cluster_var)){
+    C <- data[[cluster_var]]
+  }
   
   if (feature_eng) {
     X_expanded <- design_matrix(X_0, int = "all", int_d = 2, 
@@ -70,12 +73,27 @@ doubleML_did_cs <- function(data, y_var, d_var, t_var, x_vars, methods, cf = 5,
   theta_hat <- -mean(psi_b) / mean(psi_a)
   
   psi <- psi_a * theta_hat + psi_b
-  se_hat <- sqrt(mean(psi^2) / (mean(psi_a)^2 * n))
-  
+  influence_fun <- -1/mean(psi_a) * psi
+  if(is.null(cluster_var)){
+    se_hat <- sqrt(mean(psi^2) / (mean(psi_a)^2 * n))
+    clustered = FALSE
+  } else{
+    clusters <- unique(C)
+    cluster_sums_squared <- rep(NA, length(clusters))
+    index = 1
+    for(i in clusters){
+      cluster_sums_squared[index] <- sum(influence_fun[C == i])^2
+      index = index + 1
+    }
+    var_hat <- 1/n * sum(cluster_sums_squared) 
+    se_hat <- sqrt(var_hat/n) 
+    clustered = TRUE
+  }
   # ---- 4) Return ----
   out <- list(
     coefficients = c(ATT = theta_hat),
     se = se_hat,
+    clustered = clustered,
     t = theta_hat / se_hat,
     p = 2 * (1 - pnorm(abs(theta_hat / se_hat))),
     ci_lower = theta_hat - 1.96 * se_hat,
