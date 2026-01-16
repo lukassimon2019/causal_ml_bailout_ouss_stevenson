@@ -1,3 +1,4 @@
+
 doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf = 5,
                                  feature_eng = FALSE, bin_cut = 0.02, corr_cut = 0.9,
                                  cluster_var = NULL,
@@ -112,70 +113,59 @@ doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf 
   )
   
   # ------ 5) GATE  -------
+  
   if (heterogeneity) {
     
     if (is.null(gate_var)) stop("heterogeneity = TRUE requires gate_var")
     
     G <- as.factor(data[[gate_var]])
+    groups <- levels(G)
     
-    # restrict to treated
-    idx <- (D == 1)
-    n1 <- sum(idx)
-    if (n1 == 0) stop("No treated units found (D==1). Cannot compute GATE.")
+    # containers
+    tau_hat <- rep(NA_real_, length(groups))
+    names(tau_hat) <- groups
     
-    psi_a_g <- psi_a[idx]
-    psi_b_g <- psi_b[idx]
-    G_g <- droplevels(G[idx])
-    
-    groups <- levels(G_g)   # <-- IMPORTANT: define groups
-    
-    # pseudo-outcome
-    y_tilde <- -psi_b_g / psi_a_g
-    
-    # regression for group means (no intercept)
-    gate_fit <- lm(y_tilde ~ 0 + G_g)
-    
-    # coefficients: robust name handling
-    tau_hat_raw <- coef(gate_fit)                 # names like "G_gA", ...
-    tau_names <- sub("^G_g", "", names(tau_hat_raw))
-    tau_hat <- setNames(as.numeric(tau_hat_raw), tau_names)
-    tau_hat <- tau_hat[groups]
-    
-    # Influence function matrix
-    IF_mat <- matrix(0, nrow = n1, ncol = length(groups))
+    IF_mat <- matrix(NA_real_, nrow = n, ncol = length(groups))
     colnames(IF_mat) <- groups
     
     for (j in seq_along(groups)) {
       g <- groups[j]
-      I_g <- as.numeric(G_g == g)
-      p_g_hat <- mean(I_g)
-      if (p_g_hat == 0) stop(paste0("Group ", g, " has p_g_hat = 0 among treated units."))
-      IF_mat[, j] <- I_g / p_g_hat * (y_tilde - tau_hat[g])
+      I_g <- as.numeric(G == g)
+      
+      denom <- mean(I_g * psi_a)
+      if (abs(denom) < 1e-12) {
+        stop(paste0("Group ", g, " has near-zero denom E[I_g*psi_a]."))
+      }
+      
+      num <- mean(I_g * psi_b)
+      tau_hat[g] <- - num / denom
+      
+      # Influence function for tau_g
+      psi_g <- I_g * (psi_a * tau_hat[g] + psi_b)
+      IF_mat[, j] <- -1 / denom * psi_g
     }
     
-    # Clustered SE (same logic as ATT), applied per column
+    # SEs using the same logic as ATT, applied per group
     gate_se <- rep(NA_real_, length(groups))
     names(gate_se) <- groups
     
     if (is.null(cluster_var)) {
       for (j in seq_along(groups)) {
-        gate_se[j] <- sqrt(mean(IF_mat[, j]^2) / n1)
+        gate_se[j] <- sqrt(mean(IF_mat[, j]^2) / n)
       }
       gate_clustered <- FALSE
     } else {
-      C_g <- C[idx]
-      clusters_g <- unique(C_g)
-      
+      clusters <- unique(C)
       for (j in seq_along(groups)) {
-        IF_g <- IF_mat[, j]
-        cluster_sums_squared <- rep(NA_real_, length(clusters_g))
+        infl <- IF_mat[, j]
+        cluster_sums_squared <- rep(NA_real_, length(clusters))
         k <- 1
-        for (cl in clusters_g) {
-          cluster_sums_squared[k] <- sum(IF_g[C_g == cl])^2
+        for (cl in clusters) {
+          cluster_sums_squared[k] <- sum(infl[C == cl])^2
           k <- k + 1
         }
-        var_hat_g <- 1 / n1 * sum(cluster_sums_squared)
-        gate_se[j] <- sqrt(var_hat_g / n1)
+        var_hat_g <- 1 / n * sum(cluster_sums_squared)
+        gate_se[j] <- sqrt(var_hat_g / n)
       }
       gate_clustered <- TRUE
     }
@@ -192,7 +182,7 @@ doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf 
       ci_lower = tau_hat - 1.96 * gate_se,
       ci_upper = tau_hat + 1.96 * gate_se,
       groups = groups,
-      N_treated = n1,
+      N = n,
       gate_var = gate_var,
       influence_function = IF_mat
     )
@@ -203,82 +193,138 @@ doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf 
 
 
 
+
+
 #-----------------------------------------------------------
 #   summary + print methods for DID-CS with optional GATE
-#   class: "doubleml_did_cs_gate"
+#   class: "doubleML_did_cs_gate"
 #-----------------------------------------------------------
 
-summary.doubleml_did_cs_gate <- function(object, digits = 4, ...) {
+summary.doubleML_did_cs_gate <- function(object, digits = 4, ...) {
   
   # --- ATT table
   att_tab <- data.frame(
-    Estimate     = round(object$coefficients["ATT"], digits),
-    `Std. Error` = round(object$se, digits),
-    `t value`    = round(object$t, digits),
-    `Pr(>|t|)`   = format.pval(object$p, digits = digits),
+    Estimate       = round(object$coefficients["ATT"], digits),
+    `Std. Error`   = round(object$se, digits),
+    `t value`      = round(object$t, digits),
+    `Pr(>|t|)`     = format.pval(object$p, digits = digits),
     `95% CI Lower` = round(object$ci_lower, digits),
     `95% CI Upper` = round(object$ci_upper, digits),
     check.names = FALSE
   )
   rownames(att_tab) <- "ATT"
   
-  cat("\nATT (DID-CS)\n")
+  cat("\n===============================================\n")
+  cat("  DoubleML DID Callaway-Sant'Anna Estimation\n")
+  cat("===============================================\n")
+  
+  cat("\nSample Information:\n")
+  cat(sprintf("  Total N: %d\n", object$N))
+  cat(sprintf("  Treated: %d (%.1f%%)\n", object$N_treated, 
+              100 * object$N_treated / object$N))
+  cat(sprintf("  Control: %d (%.1f%%)\n", object$N_control, 
+              100 * object$N_control / object$N))
+  cat(sprintf("  Post-period: %d (%.1f%%)\n", object$N_post, 
+              100 * object$N_post / object$N))
+  
+  cat("\nModel Specification:\n")
+  cat(sprintf("  Outcome: %s\n", object$y_var))
+  cat(sprintf("  Treatment: %s\n", object$d_var))
+  cat(sprintf("  Time: %s\n", object$t_var))
+  cat(sprintf("  Covariates: %d\n", object$n_covariates))
+  cat(sprintf("  Cross-fitting folds: %d\n", object$cf))
+  cat(sprintf("  ML methods: %s\n", paste(object$methods, collapse = ", ")))
+  if (!is.null(object$cluster_var)) {
+    cat(sprintf("  Clustered SEs: %s\n", object$cluster_var))
+  }
+  
+  cat("\n--- Average Treatment Effect on the Treated (ATT) ---\n")
   print(att_tab, quote = FALSE)
   
   # --- Optional GATE table
   if (!is.null(object$gate) && is.list(object$gate)) {
     
     gate <- object$gate
-    
-    # prefer groups stored in gate; fall back to names(tau)
     groups <- gate$groups
     if (is.null(groups)) groups <- names(gate$tau)
     
     gate_tab <- data.frame(
-      Estimate     = round(as.numeric(gate$tau[groups]), digits),
-      `Std. Error` = round(as.numeric(gate$se[groups]), digits),
-      `t value`    = round(as.numeric(gate$t[groups]), digits),
-      `Pr(>|t|)`   = format.pval(as.numeric(gate$p[groups]), digits = digits),
+      Group          = groups,
+      Estimate       = round(as.numeric(gate$tau[groups]), digits),
+      `Std. Error`   = round(as.numeric(gate$se[groups]), digits),
+      `t value`      = round(as.numeric(gate$t[groups]), digits),
+      `Pr(>|t|)`     = format.pval(as.numeric(gate$p[groups]), digits = digits),
       `95% CI Lower` = round(as.numeric(gate$ci_lower[groups]), digits),
       `95% CI Upper` = round(as.numeric(gate$ci_upper[groups]), digits),
       check.names = FALSE
     )
-    rownames(gate_tab) <- paste0("GATE: ", groups)
     
-    cat("\nGATE (treated, by ", gate$gate_var, ")\n", sep = "")
-    print(gate_tab, quote = FALSE)
+    cat("\n--- Group Average Treatment Effects (GATE) ---\n")
+    cat(sprintf("Grouping variable: %s\n\n", gate$gate_var))
+    print(gate_tab, quote = FALSE, row.names = FALSE)
+    
+    # Add significance stars
+    cat("\nSignif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n")
   }
   
+  cat("\n===============================================\n")
   invisible(object)
 }
 
-print.doubleml_did_cs_gate <- function(x, digits = 4, ...) {
-  cat("\nDoubleML DID-CS Estimate:\n")
-  cat("  ATT:", round(x$coefficients["ATT"], digits),
-      "(SE:", round(x$se, digits), ")\n")
-  cat("  p-value:", format.pval(x$p, digits = digits), "\n")
-  cat("  N:", x$N, "\n")
+print.doubleML_did_cs_gate <- function(x, digits = 4, ...) {
+  cat("\n===============================================\n")
+  cat("  DoubleML DID-CS Estimate\n")
+  cat("===============================================\n")
+  
+  cat("\nOutcome:", x$y_var, "\n")
+  cat("Sample: N =", x$N, 
+      sprintf("(Treated = %d, Control = %d)\n", x$N_treated, x$N_control))
+  
+  cat("\nAverage Treatment Effect on the Treated (ATT):\n")
+  cat(sprintf("  Estimate: %.*f\n", digits, x$coefficients["ATT"]))
+  cat(sprintf("  Std. Error: %.*f\n", digits, x$se))
+  cat(sprintf("  t-value: %.*f\n", digits, x$t))
+  cat(sprintf("  p-value: %s\n", format.pval(x$p, digits = digits)))
+  cat(sprintf("  95%% CI: [%.*f, %.*f]\n", 
+              digits, x$ci_lower, digits, x$ci_upper))
+  
+  # Add significance indicator
+  sig <- ifelse(x$p < 0.001, "***",
+                ifelse(x$p < 0.01, "**",
+                       ifelse(x$p < 0.05, "*",
+                              ifelse(x$p < 0.1, ".", ""))))
+  if (sig != "") {
+    cat(sprintf("  Significance: %s\n", sig))
+  }
   
   if (!is.null(x$gate) && is.list(x$gate)) {
-    cat("\nGATE (treated, by ", x$gate$gate_var, "):\n", sep = "")
+    cat("\n--- Group Average Treatment Effects (GATE) ---\n")
+    cat(sprintf("Grouping variable: %s\n\n", x$gate$gate_var))
+    
     gate <- x$gate
     groups <- gate$groups
     if (is.null(groups)) groups <- names(gate$tau)
     
-    gate_lines <- paste0(
-      "  ", groups, ": ",
-      round(as.numeric(gate$tau[groups]), digits),
-      " (SE: ", round(as.numeric(gate$se[groups]), digits), ")"
-    )
-    cat(paste(gate_lines, collapse = "\n"), "\n")
+    for (g in groups) {
+      est <- as.numeric(gate$tau[g])
+      se <- as.numeric(gate$se[g])
+      p <- as.numeric(gate$p[g])
+      
+      sig_g <- ifelse(p < 0.001, "***",
+                      ifelse(p < 0.01, "**",
+                             ifelse(p < 0.05, "*",
+                                    ifelse(p < 0.1, ".", ""))))
+      
+      cat(sprintf("  %s: %.*f (SE: %.*f) %s\n", 
+                  g, digits, est, digits, se, sig_g))
+    }
   }
   
-  cat("\n")
+  cat("\n===============================================\n")
   invisible(x)
 }
 
 
-summary(res)
 
 
 
