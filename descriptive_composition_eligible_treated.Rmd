@@ -1,0 +1,57 @@
+---
+title: "Characteristics Decomposition"
+output: html_document
+date: "2026-01-16"
+---
+
+```{r}
+library(tidyverse)
+library(haven)
+library(gt)
+
+CashBail <- read_stata("CashBail.dta")
+CashBail$baildate <- as.Date(CashBail$baildate, origin = "1960-01-01")
+```
+
+```{r}
+covars <- c("defendantageatarrest", "male", "defendantisblack", 
+            "prior_FTA", "prior_9y", "past_fel", "felony")
+
+cov_table <- CashBail %>%
+  mutate(
+    Denied = if_else(initialbailtype == "Denied", 1, 0),
+    past_fel = as.numeric(prior_fel > 0),
+  
+    Period = ifelse(Post == 1, "Post-Reform", "Pre-Reform"),
+    Group = ifelse(EligibleOffense == 1, "Eligible (Treatment)", "Ineligible (Control)")
+  ) %>%
+
+  group_by(Group, Period) %>%
+  summarise(across(all_of(covars), \(x) mean(x, na.rm = TRUE)), .groups = "drop") %>%
+  pivot_longer(cols = all_of(covars), names_to = "Characteristic", values_to = "Mean") %>%
+  pivot_wider(names_from = c(Group, Period), values_from = Mean)
+```
+
+
+```{r}
+cov_table %>%
+  gt() %>%
+  tab_header(
+    title = "Table 2: Test for Compositional Changes in Defendants",
+    subtitle = "Comparing characteristics across groups to rule out 'Compositional Swaps'"
+  ) %>%
+  tab_spanner(label = "Eligible (Treatment)", columns = 2:3) %>%
+  tab_spanner(label = "Ineligible (Control)", columns = 4:5) %>%
+  fmt_number(columns = 2:5, decimals = 2) %>%
+  cols_label(
+    Characteristic = "Defendant Characteristic",
+    `Eligible (Treatment)_Pre-Reform` = "Pre",
+    `Eligible (Treatment)_Post-Reform` = "Post",
+    `Ineligible (Control)_Pre-Reform` = "Pre",
+    `Ineligible (Control)_Post-Reform` = "Post"
+  )
+```
+## Interpretation
+
+By comparing the Pre and Post means for both group, we see that the characterisitcs remain largely consistet. Age shifted up slightly in both groups, while other high-risk indicators such as prior_FTA and past_conviction remained stable. This suggests that there were no major compositional shifts in the types of defendants being processed before and after the reform, this will be further validited by a DiD approach.
+

@@ -1,0 +1,80 @@
+---
+title: "DiD on Covariates"
+output: html_document
+date: "2026-01-16"
+---
+
+```{r}
+library(tidyverse)
+library(haven)
+library(broom)
+library(gt)
+
+CashBail <- read_stata("CashBail.dta")
+CashBail$baildate <- as.Date(CashBail$baildate, origin = "1960-01-01")
+```
+
+```{r}
+covars_to_test <- c("defendantageatarrest", "male", "defendantisblack", 
+                    "prior_FTA", "prior_9y", "past_fel", "felony")
+did_cov_data <- CashBail %>%
+  filter(EligibleOffense == 1) %>%
+  mutate(
+    Denied = if_else(initialbailtype == "Denied", 1, 0),
+    past_fel = as.numeric(prior_fel > 0),
+    Released = if_else(Jail3days == 0, 1, 0)
+  )
+```
+
+
+```{r}
+did_results <- map_df(covars_to_test, function(var) {
+  form <- as.formula(paste(var, "~ Post * Released"))
+  lm(form, data = did_cov_data) %>%
+    tidy() %>%
+    filter(term == "Post:Released") %>% 
+    mutate(Variable = var)
+})
+```
+
+
+```{r}
+
+did_cov_table <- did_results %>%
+  select(Variable, estimate, std.error, p.value) %>%
+  mutate(
+    Status = if_else(p.value > 0.05, "Stable", "Shift Detected")
+  )
+
+
+did_cov_table_formatted <- did_cov_table %>%
+  gt() %>%
+  tab_header(
+    title = "DiD Test for Compositional Shifts"
+  ) %>%
+  cols_label(
+    Variable = "Characteristic",
+    estimate = "Interaction (Post × Released)",
+    std.error = "Std. Error",
+    p.value = "P-Value"
+  ) %>%
+  fmt_number(columns = c(estimate, std.error, p.value), decimals = 3) %>%
+  tab_style(
+    style = cell_text(color = "darkgreen", weight = "bold"),
+    locations = cells_body(columns = Status, rows = Status == "Stable")
+  )
+
+did_cov_table_formatted
+```
+## Interpretation
+
+To isolate the Monetary Threat Channel, we must first confirm that the Detainment Channel is not confounding our results. We know the total share of detained defendants remained constant after the reform, we conducted a Difference-in-Differences (DiD) test on defendant covariates to rule out a "compositional swap".
+
+The results in the table support the conclusion that the composition of released defendants remained largely stable. For core indicators such as Prior FTA (p=0.148) and Past Conviction (prior_9y, p=0.654), the interaction coefficients are statistically insignificant. This indicates that the gap in criminal history between released and detained individuals did not change post-reform.
+
+Characteristics such as Age (p=0.404) and Gender (p=0.836) also show no significant shift, suggesting the reform did not alter the demographic profile of released defendants relative to those detained.
+
+While shifts were detected for Race (p=0.031) and Current Felony Charges (p=0.023), the magnitudes of the coefficients (0.053 and -0.052) are relatively small. These minor fluctuations are unlikely to suggest a systematic "swap" of high-risk for low-risk individuals that would drive the overall misconduct results.
+
+By demonstrating that the type of people being released stayed consistent, we can conlcude that the observed in misconduct are primarily driven by the Monetary Threat Channel rather than changes in who was released.
+`
