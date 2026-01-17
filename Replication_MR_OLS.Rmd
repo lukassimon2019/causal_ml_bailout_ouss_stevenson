@@ -187,7 +187,6 @@ table_6 <- etable(
   dict = c(PostElig = "Eligible x Post 02/21"),
   keep = "Eligible x Post 02/21",
   extralines = list(
-    "Controls"       = c("Yes", "Yes", "Yes", "Yes"),
     "Mean dep. var." = c(round(mean_ror_pre, 3),
                          round(mean_jail_pre, 3),
                          round(mean_fta_pre, 3),
