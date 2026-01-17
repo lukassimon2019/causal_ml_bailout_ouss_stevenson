@@ -1,0 +1,38 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}    
+\usepackage{bm}
+\begin{document}
+\subsection*{Group Average Treatment Effect on the Treated (GATT)}
+
+Let $D_i \in \{0,1\}$ denote treatment status, $T_i \in \{0,1\}$ a time indicator,
+and $G_i \in \mathcal G$ a discrete group variable.
+We are interested in the group-specific average treatment effect on the treated
+\[
+\tau_g \;=\; \mathbb E\!\left[ Y_i(1) - Y_i(0) \mid D_i=1,\, G_i=g \right].
+\]
+We start from a doubly robust score for the overall ATT,
+which yields 
+\[
+\theta^{ATT}
+=
+-\frac{\mathbb E[\psi_b]}{\mathbb E[\psi_a]}.
+\]
+
+To obtain a group-specific ATT, we do not condition on $D_i=1$.
+Instead, we define a \emph{group-weighted moment condition} using the indicator
+$I_{g,i} = \mathbf 1\{G_i=g\}$:
+\[
+\mathbb E\!\left[ I_{g,i}\,(\psi_{a,i}\,\tau_g + \psi_{b,i}) \right] = 0.
+\]
+Solving for $\tau_g$ gives
+\[
+\boxed{
+\tau_g
+=
+-\frac{\mathbb E[I_g\,\psi_b]}{\mathbb E[I_g\,\psi_a]}
+}
+\]
+which is the GATT estimator implied by the same score that identifies the ATT.
+
+\end{document}
