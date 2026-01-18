@@ -17,22 +17,6 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
 ## 1.1 Differences-in-Differences
-Test markdown
-Test function
-
-```{r}
-covars_to_test <- c("defendantageatarrest", "male", "defendantisblack", 
-                    "prior_FTA", "prior_9y", "past_fel", "felony")
-```
-did_cov_data <- CashBail %>%
-  filter(EligibleOffense == 1) %>%
-  mutate(
-    Denied = if_else(initialbailtype == "Denied", 1, 0),
-    past_fel = as.numeric(prior_fel > 0),
-    Released = if_else(Jail3days == 0, 1, 0)
-  )
-```
-
 ## 1.2 Custom Double ML DiD Function
 ## 1.3 Replication of Ouss and Stevenson (2023)
 ### 1.3.1 Overview
