@@ -178,5 +178,32 @@ print(table_5)
 
 
 
+```{r}
+
+#  MERGED SUMMARY TABLE 3 and 5
+table_6 <- etable(
+  m2, m4, m5_2, m5_4,
+  headers = c("RoR", "Jail", "FTA", "Recidivism"),
+  dict = c(PostElig = "Eligible x Post 02/21"),
+  keep = "Eligible x Post 02/21",
+  extralines = list(
+    "Mean dep. var." = c(round(mean_ror_pre, 3),
+                         round(mean_jail_pre, 3),
+                         round(mean_fta_pre, 3),
+                         round(mean_rec_pre, 3))
+  ),
+  digits = 4,
+  digits.stats = "r0",
+  fitstat = ~n,
+  style.df = style.df(depvar.title = "", fixef.suffix = ""),
+  notes = "Standard errors, clustered at the offense level, are in parentheses."
+)
+
+print(table_5)
+
+
+
+
+```
 
 

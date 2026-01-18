@@ -10,6 +10,7 @@ library(ranger)
 library(glmnet)
 library(NuisanceParameters)
 library(haven)
+library(gt)
 
 CashBail <- read_stata("CashBail.dta") 
 
@@ -24,7 +25,7 @@ doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf 
                                  heterogeneity = FALSE, gate_var = NULL) {
   
   Y  <- data[[y_var]]
-  D  <- as.numeric(data[[d_var]])
+  D  <- as.numeric(data[[d_var]]) # turned into numeric later for estimation of Y.hat.d and the score computation (needs to be factor for nuisance parameter estimation of D.hat)
   Tt <- as.numeric(data[[t_var]])
   X_0 <- as.matrix(data[, x_vars])
   n  <- length(Y)
@@ -43,6 +44,7 @@ doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf 
     X <- X_0
   }
   
+ 
   # Kombiniertes Treatment: (D,T)
   DT_combined <- 2 * D + Tt
   
@@ -54,6 +56,8 @@ doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf 
     quiet = TRUE
   )
   m_hat <- as.numeric(np_m$nuisance_parameters$D.hat)
+  
+
   
   # ---- 2) g(d,t,X)
   np_g <- nuisance_parameters(
@@ -350,31 +354,42 @@ print.doubleML_did_cs_gate <- function(x, digits = 4, ...) {
 CashBail <- CashBail %>%
   mutate(
     yq_numeric = as.numeric(as.factor(yq)),
-    # Creating past_fel from prior_fel 
+    # Creating past_fel from prior_fel
     past_fel = as.numeric(prior_fel > 0),
     
-    # Creating Denied 
+    # Creating Denied
     Denied = as.numeric(initialbailtype == "Denied"),
     
     # Addressing NAs
     income_missing = as.numeric(is.na(defendantzipmedianhouseholdincom)),
     poverty_missing = as.numeric(is.na(PctBelPov)),
     
-    defendantzipmedianhouseholdincom = ifelse(is.na(defendantzipmedianhouseholdincom), 
-                                              mean(defendantzipmedianhouseholdincom, na.rm = TRUE), 
-                                              defendantzipmedianhouseholdincom),
+    defendantzipmedianhouseholdincom = ifelse(
+      is.na(defendantzipmedianhouseholdincom),
+      mean(defendantzipmedianhouseholdincom, na.rm = TRUE),
+      defendantzipmedianhouseholdincom
+    ),
     
-    PctBelPov = ifelse(is.na(PctBelPov), 
-                       mean(PctBelPov, na.rm = TRUE), 
-                       PctBelPov),
+    PctBelPov = ifelse(is.na(PctBelPov), mean(PctBelPov, na.rm = TRUE), PctBelPov),
     
     PostElig = EligibleOffense * Post,
-  
+    
     off = as.factor(off),
     yq = as.factor(yq),
-    DOW = as.factor(DOW), 
-    CommissionerName_input = as.factor(CommissionerName_input) 
+    DOW = as.factor(DOW),
+    CommissionerName_input = as.factor(CommissionerName_input),
+    # add a group_variable that indicates whether a defendant is white and not hispanic,         black and not hispanic or hispanic
+    ethnicity = factor(
+      if_else(
+        defendantisblack == 1 & Hisp == 0,
+        "black_not_hisp",
+        if_else(White == 1 & Hisp == 0, "white_not_hisp", 
+                if_else(Hisp == 1, "hisp", NA))
+      ),
+      levels = c("black_not_hisp", "white_not_hisp", "hisp")
+    )
   )
+CashBail <- filter(CashBail, !is.na(ethnicity))
 ```
 
 ### Defining Inputs
@@ -384,38 +399,45 @@ outcomes_table3 <- c("ROR", "Jail3days")
 outcomes_table5 <- c("hasfta", "Rec6mo")
 all_outcomes <- c(outcomes_table3, outcomes_table5)
 
-covariates <- c("defendantageatarrest", "male", "defendantisblack", "Hisp", 
-                "White", "defendantzipmedianhouseholdincom", "PctBelPov", 
-                "PD", "felony", "prior_FTA", "prior_9y", "past_fel", "income_missing", "poverty_missing")
-
-# ML Methods 
-my_methods <- list(
-  D.hat = list(
-   m1 = list(method = "ranger", tuning="fold")
-  ),
-  Y.hat.d = list(
-    m1 = list(method = "ranger",tuning="fold")
-  )
+covariates <- c(
+  "defendantisblack",
+  "Hisp",
+  "White",
+  "defendantageatarrest",
+  "male",
+  "defendantzipmedianhouseholdincom",
+  "PctBelPov",
+  "PD",
+  "felony",
+  "prior_FTA",
+  "prior_9y",
+  "past_fel",
+  "income_missing",
+  "poverty_missing"
 )
+
+# ML Methods
+my_methods <- list(D.hat = list(
+  m1 = list(method = "ranger_prop", tune = "fold"),
+  m2 = list(method = "logit")
+),
+
+Y.hat.d = list(
+  m1 = list(method = "ranger", tune = "fold"),
+  m2 = list(method = "lasso")
+))
 ```
 
 ```{r}
-# Define GATE variables
-gate_vars <- c("male", "defendantisblack", "Hisp", "White", "felony")
-
+# Store the estimation results for each outcome variable
 dml_gate_results <- list()
 
 set.seed(1234) 
 
-# Run GATE estimation for each outcome x gate_var combination
-# (ATT is automatically computed as part of GATE estimation)
+
+# (ATT is automatically computed as part of GATT estimation)
 for(y in all_outcomes) {
-  dml_gate_results[[y]] <- list()
-  
-  for(gate_v in gate_vars) {
-    message("Running GATE for outcome: ", y, " | group: ", gate_v)
-    
-    dml_gate_results[[y]][[gate_v]] <- doubleML_did_cs_gate(
+      dml_gate_results[[y]] <- doubleML_did_cs_gate(
       data = CashBail,
       y_var = y,
       d_var = "EligibleOffense",
@@ -425,17 +447,18 @@ for(y in all_outcomes) {
       cf = 5,              
       cluster_var = "off",
       heterogeneity = TRUE,
-      gate_var = gate_v
+      gate_var = "ethnicity",
+      feature_eng = TRUE
     )
   }
-}
+
 ```
 
-## Summary Table
+## Summary Table for ATT
 ```{r}
-# Extract ATT from first GATE variable results (they all have the same ATT)
+# Extract ATT from first GATT variable results (they all have the same ATT)
 final_dml_table <- do.call(rbind, lapply(all_outcomes, function(y) {
-  res <- dml_gate_results[[y]][[gate_vars[1]]]  # Take ATT from first gate_var
+  res <- dml_gate_results[[y]] # Take ATT from first gate_var
   data.frame(
     Outcome = y,
     ATT = res$coefficients["ATT"],
@@ -450,20 +473,172 @@ final_dml_table <- do.call(rbind, lapply(all_outcomes, function(y) {
 print(final_dml_table)
 ```
 
-## GATE Results
-
+# make the  ATT table more beautiful
 ```{r}
-# Display GATE results for each outcome and grouping variable
-for(y in all_outcomes) {
-  cat("\n\n========================================\n")
-  cat("OUTCOME:", y, "\n")
-  cat("========================================\n")
-  
-  for(gate_v in gate_vars) {
-    cat("\n--- Grouping by:", gate_v, "---\n")
-    summary(dml_gate_results[[y]][[gate_v]])
-  }
-}
+final_dm_rtable_beautiful <- final_dml_table %>%
+  select(!c(Std_Error, t_stat)) %>%
+  gt() %>%
+  tab_header(
+    title = "DiD ATT Results"
+  ) %>%
+  cols_label(
+    Outcome = "Outcome",
+    ATT = "ATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Outcome, ATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+
+
+final_dm_rtable_beautiful
 ```
 
 
+# Summary Table for GATT, dependent variable = hasfta
+
+```{r}
+
+groups <- c("black_not_hisp", "white_not_hisp", "hisp")
+summary_table_hasfta <- data.frame(
+    Group = c("black", "white", "hispanic"),
+    GATT = sapply(groups, function(x){dml_gate_results$hasfta$gate$tau[[x]]}),
+    Std_Error = sapply(groups, function(x){dml_gate_results$hasfta$gate$se[[x]]}),
+    t_stat = sapply(groups, function(x){dml_gate_results$hasfta$gate$t[[x]]}),
+    p_val = sapply(groups, function(x){dml_gate_results$hasfta$gate$p[[x]]}),
+    Lower_CI = sapply(groups, function(x){dml_gate_results$hasfta$gate$ci_lower[[x]]}),
+    Upper_CI = sapply(groups, function(x){dml_gate_results$hasfta$gate$ci_upper[[x]]})
+  ) %>% select(!c(t_stat, Std_Error))
+rownames(summary_table_hasfta) <- NULL
+
+
+summary_table_hasfta_formatted <- summary_table_hasfta %>%
+  gt() %>%
+  tab_header(
+    title = "DiD GATT Results for hasfta"
+  ) %>%
+  cols_label(
+    Group = "Group",
+    GATT = "GATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Group, GATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+
+
+summary_table_hasfta_formatted 
+
+
+```
+
+
+
+# Summary Table for GATT, dependent variable = Rec6mo
+
+```{r}
+
+summary_table_Rec6mo <- data.frame(
+    Group = c("black", "white", "hispanic"),
+    GATT = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$tau[[x]]}),
+    Std_Error = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$se[[x]]}),
+    t_stat = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$t[[x]]}),
+    p_val = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$p[[x]]}),
+    Lower_CI = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$ci_lower[[x]]}),
+    Upper_CI = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$ci_upper[[x]]})
+  ) %>% select(!c(t_stat, Std_Error))
+rownames(summary_table_Rec6mo) <- NULL
+
+
+summary_table_Rec6mo_formatted <- summary_table_Rec6mo %>%
+  gt() %>%
+  tab_header(
+    title = "DiD GATT Results for Rec6mo"
+  ) %>%
+  cols_label(
+    Group = "Group",
+    GATT = "GATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Group, GATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+
+summary_table_Rec6mo_formatted 
+
+
+```
+
+
+# Summary tabble DiD GATT, dep. variable = ROR
+```{r}
+
+summary_table_ROR <- data.frame(
+    Group = c("black", "white", "hispanic"),
+    GATT = sapply(groups, function(x){dml_gate_results$ROR$gate$tau[[x]]}),
+    Std_Error = sapply(groups, function(x){dml_gate_results$ROR$gate$se[[x]]}),
+    t_stat = sapply(groups, function(x){dml_gate_results$ROR$gate$t[[x]]}),
+    p_val = sapply(groups, function(x){dml_gate_results$ROR$gate$p[[x]]}),
+    Lower_CI = sapply(groups, function(x){dml_gate_results$ROR$gate$ci_lower[[x]]}),
+    Upper_CI = sapply(groups, function(x){dml_gate_results$ROR$gate$ci_upper[[x]]})
+  ) %>% select(!c(t_stat, Std_Error))
+rownames(summary_table_ROR) <- NULL
+
+
+summary_table_ROR_formatted <- summary_table_ROR %>%
+  gt() %>%
+  tab_header(
+    title = "DiD GATT Results for ROR"
+  ) %>%
+  cols_label(
+    Group = "Group",
+    GATT = "GATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Group, GATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+
+summary_table_ROR_formatted 
+
+
+```
+
+# Summary Table for DiiD GATT, dep. variable = Jail3days
+```{r}
+
+summary_table_Jail3days <- data.frame(
+    Group = c("black", "white", "hispanic"),
+    GATT = sapply(groups, function(x){dml_gate_results$Jail3days$gate$tau[[x]]}),
+    Std_Error = sapply(groups, function(x){dml_gate_results$Jail3days$gate$se[[x]]}),
+    t_stat = sapply(groups, function(x){dml_gate_results$Jail3days$gate$t[[x]]}),
+    p_val = sapply(groups, function(x){dml_gate_results$Jail3days$gate$p[[x]]}),
+    Lower_CI = sapply(groups, function(x){dml_gate_results$Jail3days$gate$ci_lower[[x]]}),
+    Upper_CI = sapply(groups, function(x){dml_gate_results$Jail3days$gate$ci_upper[[x]]})
+  ) %>% select(!c(t_stat, Std_Error))
+rownames(summary_table_Jail3days) <- NULL
+
+
+summary_table_Jail3days_formatted <- summary_table_Jail3days %>%
+  gt() %>%
+  tab_header(
+    title = "DiD GATT Results for Jail3days"
+  ) %>%
+  cols_label(
+    Group = "Group",
+    GATT = "GATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Group, GATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+
+summary_table_Jail3days_formatted 
+
+
+```
