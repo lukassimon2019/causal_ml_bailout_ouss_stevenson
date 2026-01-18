@@ -1,0 +1,52 @@
+---
+title: "Group Assignment: Replicating Ouss and Stevenson (2023)"
+author: "Group Members: Julian Schmidt, Laurens Mauz, Isa Afridi, Lukas Simon"
+date: "`r Sys.Date()`"
+output: 
+  html_notebook:
+    toc: true
+    toc_depth: 3
+    number_sections: false
+    theme: cosmo
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+# Load libraries here (e.g., library(tidyverse), library(fixest), library(DoubleML))
+```
+
+## 1.1 Differences-in-Differences
+Test markdown
+Test function
+
+```{r}
+covars_to_test <- c("defendantageatarrest", "male", "defendantisblack", 
+                    "prior_FTA", "prior_9y", "past_fel", "felony")
+```
+did_cov_data <- CashBail %>%
+  filter(EligibleOffense == 1) %>%
+  mutate(
+    Denied = if_else(initialbailtype == "Denied", 1, 0),
+    past_fel = as.numeric(prior_fel > 0),
+    Released = if_else(Jail3days == 0, 1, 0)
+  )
+```
+
+## 1.2 Custom Double ML DiD Function
+## 1.3 Replication of Ouss and Stevenson (2023)
+### 1.3.1 Overview
+### 1.3.2 Descriptives
+#### Cash Bail System
+#### Policy Reform
+#### Target Parameters and Controls
+### 1.3.3 Replication Results
+#### DiD TWFE
+#### DiD Double ML
+#### Heterogeneity
+### 1.3.4 Reflection on DiD Assumptions
+#### Policy Context
+#### Event Study DiD
+#### Endogenous Responses
+#### Channels of Cash-Bail Reform Effects on Violations
+### 1.3.5 Feedback
