@@ -389,14 +389,15 @@ covariates <- c("defendantageatarrest", "male", "defendantisblack", "Hisp",
                 "PD", "felony", "prior_FTA", "prior_9y", "past_fel", "income_missing", "poverty_missing")
 
 # ML Methods 
-my_methods <- list(
-  D.hat = list(
-   m1 = list(method = "ranger")#, tuning="fold")
-  ),
-  Y.hat.d = list(
-    m1 = list(method = "ranger")#,tuning="fold")
-  )
-)
+my_methods <- list(D.hat = list(
+  m1 = list(method = "ranger_prop", tune = "fold"),
+  m2 = list(method = "logit")
+),
+
+Y.hat.d = list(
+  m1 = list(method = "ranger", tune = "fold"),
+  m2 = list(method = "lasso")
+))
 ```
 
 ```{r}
@@ -417,7 +418,8 @@ for(y in all_outcomes) {
     methods = my_methods,
     cf = 5,              
     cluster_var = "off",
-    heterogeneity = FALSE
+    heterogeneity = FALSE,
+    feature_eng = TRUE
   )
 }
 ```
