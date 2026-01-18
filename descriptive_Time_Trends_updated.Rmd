@@ -1,0 +1,274 @@
+---
+title: "Outcome Variables Time Trend"
+output: html_document
+date: "2026-01-15"
+---
+
+```{r}
+# If packages are missing, restart R session and run:
+# install.packages(c("ggh4x", "gt", "gtsummary"))
+
+library(tidyverse)
+library(haven)
+library(gt)
+library(ggh4x)
+library(modelsummary)
+library(gtsummary)
+library(patchwork)
+
+CashBail <- read_stata("CashBail.dta")
+CashBail$baildate <- as.Date(CashBail$baildate, origin = "1960-01-01")
+```
+### Table 1; Descriptive Statistics 
+```{r}
+df_table1 <- CashBail %>%
+  filter(Post == 0) %>% 
+  mutate(
+    defendantzipmedianhouseholdincom = round(defendantzipmedianhouseholdincom, 0),
+    PctBelPov = PctBelPov/100,
+    Denied = if_else(initialbailtype == "Denied", 1, 0),
+    past_fel = if_else(coalesce(prior_fel, 0) > 0, 1, 0),
+    group_label = if_else(`EligibleOffense` == 1, "Eligible cases", "Ineligible cases")
+  ) %>%
+  select(
+    group_label,
+    defendantageatarrest, male, defendantisblack, Hisp, White, 
+    defendantzipmedianhouseholdincom, PctBelPov, PD, felony, 
+    prior_FTA, prior_9y, past_fel, 
+    ROR, Nonmonetary, Unsecured, Bail_5000, Bail_HIGH, Denied, 
+    Jail3days, hasfta, Rec6mo
+  )
+
+####
+table1_final <- df_table1 %>%
+  tbl_summary(
+    by = group_label,
+    # forcing R to treat 0/1 variables as continuous so it can calculate mean 
+    type = list(everything() ~ "continuous"), 
+    label = list(
+      defendantageatarrest ~ "Age",
+      male ~ "Male",
+      defendantisblack ~ "Black",
+      Hisp ~ "Hispanic",
+      White ~ "White",
+      defendantzipmedianhouseholdincom ~ "Median household income in zip code",
+      PctBelPov ~ "Fraction below poverty in zip code",
+      PD ~ "Public Defender",
+      felony ~ "Felony",
+      prior_FTA ~ "Has a prior FTA",
+      prior_9y ~ "Has a past conviction",
+      past_fel ~ "Has a past felony conviction",
+      ROR ~ "ROR",
+      Nonmonetary ~ "Supervised release",
+      Unsecured ~ "Unsecured monetary",
+      Bail_5000 ~ "Secured bail up to 5,000",
+      Bail_HIGH ~ "Secured bail over 5,000",
+      Denied ~ "Denied bail",
+      Jail3days ~ "Jail (3+ nights)",
+      hasfta ~ "FTA",
+      Rec6mo ~ "Recidivism"
+    ),
+    statistic = all_continuous() ~ "{mean}",
+    digits = all_continuous() ~ 2,
+    missing = "no"
+  ) %>%
+  modify_header(label = "**Variable**") %>%
+  modify_spanning_header(all_stat_cols() ~ "**Pre-Reform Cases**") %>%
+  bold_labels()
+
+table1_final %>%
+  as_gt() %>%
+  tab_row_group(label = "Misconduct", rows = 20:21) %>%
+  tab_row_group(label = "Pre-trial Conditions", rows = 13:19) %>%
+  tab_row_group(label = "Defendant Characteristics", rows = 1:12)
+```
+
+
+### Figure 1: Time Trends in Outcome Variables
+```{r}
+df_plot <- CashBail %>%
+  filter(EligibleOffense == 1) %>%
+  mutate(
+    days_rel = as.numeric(baildate - as.Date("2018-02-22")),
+    
+    W2 = ifelse(days_rel >= 0, floor(days_rel / 14), floor((days_rel + 1) / 14) - 1)
+  )
+
+biweekly_avg <- df_plot %>%
+  group_by(W2, EligibleOffense) %>%
+  summarise(
+    ROR = mean(ROR, na.rm = TRUE),
+    Jail = mean(Jail3days, na.rm = TRUE),
+    FTA = mean(hasfta, na.rm = TRUE),
+    Recidivism = mean(Rec6mo, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+ 
+  filter(W2 >= -12 & W2 <= 12 & W2 != 0) %>%
+  pivot_longer(cols = c(ROR, Jail, FTA, Recidivism), names_to = "Outcome", values_to = "Rate")
+```
+
+## Scaling
+```{r}
+scales_y <- list(
+  Outcome == "ROR" ~ scale_y_continuous(limits = c(0.4, 0.8), breaks = seq(0.4, 0.8, 0.1)),
+  Outcome == "Jail" ~ scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1)),
+  Outcome == "FTA" ~ scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1)),
+  Outcome == "Recidivism" ~ scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1))
+)
+```
+
+```{r}
+biweekly_avg <- biweekly_avg %>%
+  mutate(Outcome = factor(Outcome, levels = c("ROR", "Jail", "FTA", "Recidivism")))
+```
+
+
+## Plots
+```{r}
+
+ggplot(biweekly_avg, aes(x = W2, y = Rate)) +
+  geom_point(color = "grey70", size = 1.5) +
+  
+  
+  geom_smooth(data = subset(biweekly_avg, W2 < 0), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_smooth(data = subset(biweekly_avg, W2 > 0), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
+  
+  facet_wrap(~Outcome, scales = "free_y") +
+  
+  facetted_pos_scales(y = scales_y) +
+  
+  scale_x_continuous(breaks = seq(-12, 12, 4), 
+                     labels = function(x) x / 2) +
+  
+  theme_minimal() +
+  labs(x = "Months relative to Feb. 22",
+       y = "Bi-weekly Rate") +
+  theme(panel.grid.minor = element_blank())
+        
+```
+
+## Figure 1a: Only ROR Trend
+```{r}
+p_eligible <- ggplot(subset(biweekly_avg, Outcome == "ROR"), aes(x = W2, y = Rate)) +
+  geom_point(color = "grey70", size = 1.5) +
+  
+  
+  geom_smooth(data = subset(biweekly_avg, W2 < 0 & Outcome == "ROR"), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_smooth(data = subset(biweekly_avg, W2 > 0 & Outcome == "ROR"), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
+  
+  scale_y_continuous(limits = c(0.4, 0.8), breaks = seq(0.4, 0.8, 0.1)) +
+  
+  scale_x_continuous(breaks = seq(-12, 12, 4), 
+                     labels = function(x) x / 2) +
+  
+  
+  theme_minimal() +
+  labs(title = "ROR",
+    x = "Months relative to Feb. 22",
+       y = "Bi-weekly ROR Rate") +
+  theme(panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+```
+
+
+## Figure 1b: Only Jail Trend 
+```{r}
+ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
+  geom_point(color = "grey70", size = 1.5) +
+  
+  
+  geom_smooth(data = subset(biweekly_avg, W2 < 0 & Outcome == "Jail"), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_smooth(data = subset(biweekly_avg, W2 > 0 & Outcome == "Jail"), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
+  
+  scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1)) +
+  
+  scale_x_continuous(breaks = seq(-12, 12, 4), 
+                     labels = function(x) x / 2) +
+  
+  theme_minimal() +
+  labs(title = "Jail",
+    x = "Months relative to Feb. 22",
+       y = "Bi-weekly Jail Rate") +
+  theme(panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+```
+
+## Figure 1c: ROR for Ineligible Cases
+```{r}
+df_inel <- CashBail %>%
+  filter(EligibleOffense == 0) %>%
+  mutate(
+    days_rel = as.numeric(baildate - as.Date("2018-02-22")),
+
+    W2 = ifelse(days_rel >= 0, floor(days_rel / 14), floor((days_rel + 1) / 14) - 1)
+  )
+
+# Bi-weekly ROR Rate
+biweekly_ror_inel <- df_inel %>%
+  group_by(W2) %>%
+  summarise(Rate = mean(ROR, na.rm = TRUE), .groups = "drop") %>%
+  filter(W2 >= -12 & W2 <= 11)
+
+p_ineligible <- ggplot(biweekly_ror_inel, aes(x = W2, y = Rate)) +
+ 
+  geom_point(color = "grey70", size = 1.2) +
+  
+  geom_smooth(data = filter(biweekly_ror_inel, W2 < 0), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "grey30", size = 0.8) +
+  
+  geom_smooth(data = filter(biweekly_ror_inel, W2 >= 0), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "grey30", size = 0.8) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
+  
+  scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1)) +
+  
+  scale_x_continuous(breaks = seq(-12, 12, 4), 
+                     labels = function(x) x / 2) +
+  
+  theme_minimal() +
+  labs(title = "ROR", 
+       subtitle = "(Ineligible Cases)",
+       x = "Months relative to Feb. 22", 
+       y = "Bi-weekly rate") +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    panel.grid.minor = element_blank()
+  )
+  
+```
+
+## Combined figure 1a and 1c
+```{r}
+
+combined_ror_plot <- p_eligible + p_ineligible
+
+
+combined_ror_plot
+```
+
