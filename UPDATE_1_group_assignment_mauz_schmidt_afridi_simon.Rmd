@@ -26,6 +26,7 @@ library(modelsummary)
 library(gtsummary)
 library(DoubleML)
 library(kableExtra)
+library(cowplot)
 ```
 
 ```{r}
@@ -101,7 +102,7 @@ desc_stats_final <- desc_stats_set %>%
   modify_spanning_header(all_stat_cols() ~ "**Pre-Reform Cases**") %>%
   bold_labels()
 
-table1_final %>%
+desc_stats_final %>%
   as_gt() %>%
   tab_row_group(label = "Misconduct", rows = 20:21) %>%
   tab_row_group(label = "Pre-trial Conditions", rows = 13:19) %>%
@@ -194,10 +195,16 @@ p_eligible <- ggplot(subset(biweekly_avg, Outcome == "ROR"), aes(x = W2, y = Rat
   
   theme_minimal() +
   labs(title = "ROR",
+       subtitle = "(Eligible Cases)",
     x = "Months relative to Feb. 22",
        y = "Bi-weekly ROR Rate") +
   theme(panel.grid.minor = element_blank(),
-        plot.title = element_text(hjust = 0.5))
+        plot.title = element_text(hjust = 0.5)) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    panel.grid.minor = element_blank()
+  )
 ```
 
 ```{r}
@@ -253,10 +260,11 @@ p_ineligible <- ggplot(biweekly_ror_inel, aes(x = W2, y = Rate)) +
 
 ```{r}
 
-combined_ror_plot <- p_eligible + p_ineligible
+#combined_ror_plot <- p_eligible + p_ineligible
+plot_grid(p_eligible, p_ineligible,
+          ncol = 2, nrow = 1)
 
-
-combined_ror_plot
+#combined_ror_plot
 ```
 
 #### Policy Reform
