@@ -33,14 +33,18 @@ master_data <- read_stata("CashBail.dta")
 master_data$baildate <- as.Date(master_data$baildate, origin = "1960-01-01")
 ```
 
-
 ## 1.1 Differences-in-Differences
+
 ## 1.2 Custom Double ML DiD Function
+
 ## 1.3 Replication of Ouss and Stevenson (2023)
+
 ### 1.3.1 Overview
+
 ### 1.3.2 Descriptives
 
 #### Descriptive Statistics Table
+
 ```{r}
 desc_stats_set <- master_data %>%
   filter(Post == 0) %>% 
@@ -104,7 +108,6 @@ table1_final %>%
   tab_row_group(label = "Defendant Characteristics", rows = 1:12)
 ```
 
-
 #### Cash Bail System
 
 ```{r}
@@ -166,7 +169,6 @@ biweekly_avg <- biweekly_avg %>%
 #   theme(panel.grid.minor = element_blank())
         
 ```
-
 
 ```{r}
 # Figure 1a: ROR Time Trend
@@ -248,6 +250,7 @@ p_ineligible <- ggplot(biweekly_ror_inel, aes(x = W2, y = Rate)) +
 ```
 
 ## Figure 1a: ROR Time Trend & Figure 1b: ROR for Ineligible Cases
+
 ```{r}
 
 combined_ror_plot <- p_eligible + p_ineligible
@@ -257,7 +260,9 @@ combined_ror_plot
 ```
 
 #### Policy Reform
+
 #### Target Parameters and Controls
+
 ### 1.3.3 Replication Results
 
 #### DiD TWFE
@@ -396,7 +401,8 @@ table_5 <- etable(m5_1, m5_2, m5_3, m5_4,
 
 ```
 
-##  Table 3: DiD Estimates of policy effect on ROR and Jail & Table 5: DiD Estimates of policy effect on FTA and Recidivism 
+## Table 3: DiD Estimates of policy effect on ROR and Jail & Table 5: DiD Estimates of policy effect on FTA and Recidivism
+
 ```{r}
 table_6 <- etable(
   m2, m4, m5_2, m5_4,
@@ -429,16 +435,48 @@ table_6 %>%
 
 ```
 
-
 #### DiD Double ML
+
+We observe $(Y_i, D_i, T_i, X_i)$ where $D_i \in \{0,1\}$ is the treatment variable and $T_i \in \{0,1\}$ is the time variable. The parameter of interest is the ATT (average treatment effect on the treated): $$\theta_0 = E[(Y(1) - Y(0)| D=1 ]$$ identified in Cross Sectional DiD under parallel trend and standard overlap assumption.
+
+We thereby use a doubly robust AIPW scores to get the parameter estimate $\hat{\theta}$ as well as the influence function $\hat{\psi}_i(\theta)$. In order to be able to use AIPW we need to estimate the nuisance parameter propensity $$m_0(X) = P(D=1|X) \quad \forall D\in \{0,1\}$$ as well as the outcome regressions for each cell $(d,t)$ which is $$g_{dt,0}(X) = E[Y|D=d, T=t,X]$$ by the given nuisance parameter function. Since the given function does not allow to conditioning on $(D,T,X)$ we need constructed a workaround such that we can get $\hat{g}_{11}(X),\hat{g}_{01}(X), \hat{g}_{10}(X), \hat{g}_{00}(X)$. We estimate that by turning $(D,T)$ into a 4-category label `DT_combined <- 2 * D + Tt`.
+
+We then constructed $\psi_a$ and $\psi_b$ based on the score provided by the [DoubleML](https://docs.doubleml.org/stable/guide/scores.html#id4) documentation. Using this we solve proceeded by solving the linear moment equation: $$ 
+E[\psi_a \theta + \theta_b] = 0 \Rightarrow \hat{\theta} = - \frac{E_i[\psi_b]}{E_i[\psi_a]}
+$$ Afterward we constructed the influence function $$ IF_i = \frac{-1}{E[\psi_a]} \cdot \psi$$ and used it to get clustered standard errors.
+
 #### Heterogeneity
+
+Let $D_i \in \{0,1\}$ denote treatment status, $T_i \in \{0,1\}$ a time indicator, and $G_i \in \mathcal G$ a discrete group variable. We are interested in the group-specific average treatment effect on the treated $$
+\tau_g \;=\; \mathbb E\!\left[ Y_i(1) - Y_i(0) \mid D_i=1,\, G_i=g \right].
+$$ We start from a doubly robust score for the overall ATT, which yields $$
+\theta^{ATT}
+=
+-\frac{\mathbb E[\psi_b]}{\mathbb E[\psi_a]}.
+$$
+
+To obtain a group-specific ATT, we do not condition on $D_i=1$. Instead, we define a group-weighted moment condition using the indicator $I_{g,i} = \mathbf 1\{G_i=g\}$: $$
+\mathbb E\!\left[ I_{g,i}\,(\psi_{a,i}\,\tau_g + \psi_{b,i}) \right] = 0.
+$$ Solving for $\tau_g$ gives $$
+\boxed{
+\tau_g
+=
+-\frac{\mathbb E[I_g\,\psi_b]}{\mathbb E[I_g\,\psi_a]}
+}
+$$ which is the GATT estimator implied by the same score that identifies the ATT.
+
 ### 1.3.4 Reflection on DiD Assumptions
+
 #### Policy Context
+
 #### Event Study DiD
+
 #### Endogenous Responses
+
 #### Channels of Cash-Bail Reform Effects on Violations
 
-## Figure 2: Jail Time Trend 
+## Figure 2: Jail Time Trend
+
 ```{r}
 ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
   geom_point(color = "grey70", size = 1.5) +
@@ -466,6 +504,7 @@ ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
   theme(panel.grid.minor = element_blank(),
         plot.title = element_text(hjust = 0.5))
 ```
+
 ### Table x: Characterisitcs Composition
 
 ```{r}
@@ -514,8 +553,4 @@ did_cov_table_formatted <- did_cov_table %>%
 did_cov_table_formatted
 ```
 
-
 ### 1.3.5 Feedback
-
-
-
