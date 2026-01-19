@@ -16,7 +16,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 library(tidyverse)
 library(fixest)
 library(haven)
@@ -38,81 +38,49 @@ master_data$baildate <- as.Date(master_data$baildate, origin = "1960-01-01")
 ```
 
 ## 1.1 Differences-in-Differences
+Difference-in-Differences is a causal inference method used on observed data (i.e. not experimental setting) to estimate causal effects. It does so by comparing the changes in outcomes over time between a population that is enrolled in a program (the Treatment Group) and a population that is not (the Control Group). The intuition is the following: We want to know what would have happened to the treated units had they not been treated. Since we cannot observe this counterfactual, we use the trend of the control group as a proxy for what the treated group's trend would have been.
+
+### Identification
+
+$$
+\begin{aligned}
+\mathbb{E}[Y_2 \mid W = 1] - \mathbb{E}[Y_1 \mid W = 1] &\stackrel{\text{consistency}}{=} \mathbb{E}[Y_2(1) \mid W = 1] - \mathbb{E}[Y_1(1) \mid W = 1] \\
+&= \mathbb{E}[Y_2(1) - Y_1(1) \mid W = 1] + \color{blue}{\mathbb{E}[Y_2(0) - Y_2(0) \mid W = 1]} + \color{blue}{\mathbb{E}[Y_1(0) - Y_1(0) \mid W = 1]} \\
+&= \underbrace{\mathbb{E}[Y_2(1) - Y_2(0) \mid W = 1]}_{\tau_{ATT}} + \underbrace{\mathbb{E}[Y_2(0) - Y_1(0) \mid W = 1]}_{\text{counterfactual time trend}} - \underbrace{\mathbb{E}[Y_1(1) - Y_1(0) \mid W = 1]}_{\text{anticipation effect}}
+\end{aligned}
+$$
+
+Unlike standard Cross-Sectional OLS, which relies on the unconfoundedness assumption ($Y(0), Y(1) \perp W \mid X$), DiD relaxes this requirement. It allows for selection bias—where individuals choose treatment based on unobserved characteristics—provided that these unobserved factors are time-invariant, and the parallel trends and no-anticipation effect assumptions hold. 
+
+The former requires trends in the absence of treatment to be parallel, i.e. $\mathbb{E}[Y_2(0) - Y_1(0) \mid W=1]=\mathbb{E}[Y_2(0) - Y_1(0) \mid W=0]$. 
+
+The no-anticipation effect assumption requires that the outcomes of the treatment group are only affected by the treatment after the treatment is given, i.e., $$\mathbb{E}[Y_1(1) - Y_1(0) \mid W=1] = 0$$.
+
+The downside of not needing the unconfoundedness assumption is that we can only identify the ATT, not the ATU or ATE. This is the case because we do not assume parallel trends under treatment, i.e., $\mathbb{E}[Y_2(1) - Y_1(1) \mid W=1]=\mathbb{E}[Y_2(1) - Y_1(1) \mid W=0]$. In other words, the control group might be different in some unobserved confounders which make treatment effects heterogeneous from the treatment group.
+
+In practice researchers often rely on conditional parallel trends. This assumption acknowledges that treatment and control groups may have different compositions (e.g., age or gender distributions) that naturally lead to diverging trends. Therefore trends are parallel only after adjusting for these covariates. Furthermore, with repeated cross-sectional data researcher control for relevant covariates in order to account for potential group-composition shifts between periods.
 
 ## 1.2 Custom Double ML DiD Function
 
-## 1.3 Replication of Ouss and Stevenson (2023)
+## 1.3a Replication of Ouss and Stevenson (2023)
 
-### 1.3.1 Overview
-
-### 1.3.2 Descriptives
-
-#### Descriptive Statistics Table
-
-```{r}
-desc_stats_set <- master_data %>%
-  filter(Post == 0) %>% 
-  mutate(
-    defendantzipmedianhouseholdincom = round(defendantzipmedianhouseholdincom, 0),
-    PctBelPov = PctBelPov/100,
-    Denied = if_else(initialbailtype == "Denied", 1, 0),
-    past_fel = if_else(coalesce(prior_fel, 0) > 0, 1, 0),
-    group_label = if_else(`EligibleOffense` == 1, "Eligible cases", "Ineligible cases")
-  ) %>%
-  select(
-    group_label,
-    defendantageatarrest, male, defendantisblack, Hisp, White, 
-    defendantzipmedianhouseholdincom, PctBelPov, PD, felony, 
-    prior_FTA, prior_9y, past_fel, 
-    ROR, Nonmonetary, Unsecured, Bail_5000, Bail_HIGH, Denied, 
-    Jail3days, hasfta, Rec6mo
-  )
-
-####
-desc_stats_final <- desc_stats_set %>%
-  tbl_summary(
-    by = group_label,
-    # forcing R to treat 0/1 variables as continuous so it can calculate mean 
-    type = list(everything() ~ "continuous"), 
-    label = list(
-      defendantageatarrest ~ "Age",
-      male ~ "Male",
-      defendantisblack ~ "Black",
-      Hisp ~ "Hispanic",
-      White ~ "White",
-      defendantzipmedianhouseholdincom ~ "Median household income in zip code",
-      PctBelPov ~ "Fraction below poverty in zip code",
-      PD ~ "Public Defender",
-      felony ~ "Felony",
-      prior_FTA ~ "Has a prior FTA",
-      prior_9y ~ "Has a past conviction",
-      past_fel ~ "Has a past felony conviction",
-      ROR ~ "ROR",
-      Nonmonetary ~ "Supervised release",
-      Unsecured ~ "Unsecured monetary",
-      Bail_5000 ~ "Secured bail up to 5,000",
-      Bail_HIGH ~ "Secured bail over 5,000",
-      Denied ~ "Denied bail",
-      Jail3days ~ "Jail (3+ nights)",
-      hasfta ~ "FTA",
-      Rec6mo ~ "Recidivism"
-    ),
-    statistic = all_continuous() ~ "{mean}",
-    digits = all_continuous() ~ 2,
-    missing = "no"
-  ) %>%
-  modify_header(label = "**Variable**") %>%
-  modify_spanning_header(all_stat_cols() ~ "**Pre-Reform Cases**") %>%
-  bold_labels()
-
-desc_stats_final %>%
-  as_gt() %>%
-  tab_row_group(label = "Misconduct", rows = 20:21) %>%
-  tab_row_group(label = "Pre-trial Conditions", rows = 13:19) %>%
-  tab_row_group(label = "Defendant Characteristics", rows = 1:12)
-```
+### 1.3a.2 Descriptives
 
 #### Cash Bail System
+The paper “Does Cash Bail Deter Misconduct?” (Ouss and Stevenson, 2023) investigates how cash bails affect the likelihood of a defendant violating the bail conditions. Cash bailout refers to a financial collateral the defendant must pay to remain out of jail while they await their trial. If the defendant fulfils the bail conditions they get their collateral back. The conditions which need to be fulfilled in order for the defendant to get the cash bail back after the court trials are over:
+
+- **Appearing to all hearings**
+- **Not committing another crime**
+
+If an individual violates either of these conditions, they lose the bail collateral. Furthermore, if an individual does not even pay the collateral in the beginning, they are detained in jail until the court trials are over.
+
+The cash bail system thus is supposed to ensure individuals appear for the hearings and don’t commit further crimes through a monetary incentive. Thus individuals who do not pay the bail collateral are jailed, because the lack of monetary incentive would make it more likely for them to violate the conditions.
+
+#### Policy Reform
+The reform analysed in this paper is a change in the policy of Philadelphia’s public prosecutors, who in February 2018 recommended to no longer require cash-bail for many low-level offenses. The motivation of this and similar reforms in other jurisdictions is to protect economically vulnerable, often minority groups which cannot afford to post cash-bail. If the cash-bail system is successful in motivating individuals to not violate the bail conditions, then releasing defendants without financial incentive should lead to more violations. This paper thus uses DiD to investigate whether eligible defenders (i.e. defenders eligible for the new bail policy, who committed low-level crimes) who now no longer need to post bail are after the reform more likely to miss court hearings and commit further crimes.
+
+Importantly, the reform entailed the Philadelphia prosecutor only recommending this change in bail policy instead of simply deciding, because the decision whether and how much cash-bail is required is made by bail magistrates, who have the ultimate discretion here. While this discretion with magistrates makes it thus imaginable that this reform did not actually change anything, figure 1 shows that the share of defendants released without cash-bail (the correct legal term being Release on own Recognizance, or ROR) increased significantly, by around 15-20 percentage points. In the replication section, we will test this increase in ROR also through a DiD design.
+
 
 ```{r}
 data_trends_ov <- master_data %>%
@@ -174,6 +142,7 @@ biweekly_avg <- biweekly_avg %>%
         
 ```
 
+
 ```{r}
 # Figure 1a: ROR Time Trend
 p_eligible <- ggplot(subset(biweekly_avg, Outcome == "ROR"), aes(x = W2, y = Rate)) +
@@ -209,6 +178,7 @@ p_eligible <- ggplot(subset(biweekly_avg, Outcome == "ROR"), aes(x = W2, y = Rat
     panel.grid.minor = element_blank()
   )
 ```
+
 
 ```{r}
 
@@ -267,10 +237,31 @@ plot_grid(p_eligible, p_ineligible,
           ncol = 2, nrow = 1)
 
 ```
+The authors argue that the DA led reform thus did not affect bail policy through a change in formal rules, but rather through a change in norms.
 
-#### Policy Reform
+
 
 #### Target Parameters and Controls
+The authors scraped the data for this analysis off the Philadelphia court websites. The auxiliary target parameters are:
+
+- **Release on Recognizance (ROR):** Whether a defendant is released without monetary bail or supervisory conditions. As explained in the prior section,  measuring ROR is necessary to confirm that the policy actually changed bail-setting behavior.
+- **Pretrial Detention:** Defined as spending at least three nights in jail immediately following the initial bail hearing. The DiD will later show that the amount of individuals detained before trial was not affected by the reform. This will be used to argue that any reform affects on the FTA and recidivism variables must be due to the monetary incentive channel and not the detainment channel.
+
+The target parameters of the main DiD analysis are:
+
+- **Failure to Appear (FTA):** Defined as equal to one if the defendant fails to appear for at least one court date associated with the case.
+- **Recidivism:** Defined as equal to one if the defendant is charged with a new offense within six months of the bail hearing.
+
+Both of these main target parameters make up the conditions which cannot be violated if the defendant wants to keep their bail money.
+
+To account for case and defendant characteristics, the authors include the following controls in the DiD analyses:
+
+- **Defendant Demographics:** Race, gender, and age at arrest.
+- **Criminal History:** The presence and number of prior FTAs and prior convictions (limited to a nine-year window before the bail hearing),,.
+- **Case Characteristics:** The type of offense (aggregated to the 23 most common offenses plus a catchall category), the grade of offense, and whether the defendant was represented by a public defender.
+- **Procedural Factors:** The specific bail magistrate overseeing the hearing, the day of the week, and the magistrate work shift.
+- **Standard errors:** in these analyses are clustered at the offense level to account for correlations within offense types.
+
 
 ### 1.3.3 Replication Results
 
