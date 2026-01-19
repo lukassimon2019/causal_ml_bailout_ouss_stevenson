@@ -1,0 +1,521 @@
+---
+title: 'Group Assignment: Replicating Ouss and Stevenson (2023)'
+author: 'Group Members: Julian Schmidt, Laurens Mauz, Isa Afridi, Lukas Simon'
+date: "`r Sys.Date()`"
+output:
+  html_notebook:
+    toc: true
+    toc_depth: 3
+    number_sections: false
+    theme: cosmo
+    highlight: tango
+  html_document:
+    toc: true
+    toc_depth: '3'
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(fixest)
+library(haven)
+library(gt)
+library(ggh4x)
+library(modelsummary)
+library(gtsummary)
+library(DoubleML)
+library(kableExtra)
+```
+
+```{r}
+master_data <- read_stata("CashBail.dta")
+master_data$baildate <- as.Date(master_data$baildate, origin = "1960-01-01")
+```
+
+
+## 1.1 Differences-in-Differences
+## 1.2 Custom Double ML DiD Function
+## 1.3 Replication of Ouss and Stevenson (2023)
+### 1.3.1 Overview
+### 1.3.2 Descriptives
+
+#### Descriptive Statistics Table
+```{r}
+desc_stats_set <- master_data %>%
+  filter(Post == 0) %>% 
+  mutate(
+    defendantzipmedianhouseholdincom = round(defendantzipmedianhouseholdincom, 0),
+    PctBelPov = PctBelPov/100,
+    Denied = if_else(initialbailtype == "Denied", 1, 0),
+    past_fel = if_else(coalesce(prior_fel, 0) > 0, 1, 0),
+    group_label = if_else(`EligibleOffense` == 1, "Eligible cases", "Ineligible cases")
+  ) %>%
+  select(
+    group_label,
+    defendantageatarrest, male, defendantisblack, Hisp, White, 
+    defendantzipmedianhouseholdincom, PctBelPov, PD, felony, 
+    prior_FTA, prior_9y, past_fel, 
+    ROR, Nonmonetary, Unsecured, Bail_5000, Bail_HIGH, Denied, 
+    Jail3days, hasfta, Rec6mo
+  )
+
+####
+desc_stats_final <- desc_stats_set %>%
+  tbl_summary(
+    by = group_label,
+    # forcing R to treat 0/1 variables as continuous so it can calculate mean 
+    type = list(everything() ~ "continuous"), 
+    label = list(
+      defendantageatarrest ~ "Age",
+      male ~ "Male",
+      defendantisblack ~ "Black",
+      Hisp ~ "Hispanic",
+      White ~ "White",
+      defendantzipmedianhouseholdincom ~ "Median household income in zip code",
+      PctBelPov ~ "Fraction below poverty in zip code",
+      PD ~ "Public Defender",
+      felony ~ "Felony",
+      prior_FTA ~ "Has a prior FTA",
+      prior_9y ~ "Has a past conviction",
+      past_fel ~ "Has a past felony conviction",
+      ROR ~ "ROR",
+      Nonmonetary ~ "Supervised release",
+      Unsecured ~ "Unsecured monetary",
+      Bail_5000 ~ "Secured bail up to 5,000",
+      Bail_HIGH ~ "Secured bail over 5,000",
+      Denied ~ "Denied bail",
+      Jail3days ~ "Jail (3+ nights)",
+      hasfta ~ "FTA",
+      Rec6mo ~ "Recidivism"
+    ),
+    statistic = all_continuous() ~ "{mean}",
+    digits = all_continuous() ~ 2,
+    missing = "no"
+  ) %>%
+  modify_header(label = "**Variable**") %>%
+  modify_spanning_header(all_stat_cols() ~ "**Pre-Reform Cases**") %>%
+  bold_labels()
+
+table1_final %>%
+  as_gt() %>%
+  tab_row_group(label = "Misconduct", rows = 20:21) %>%
+  tab_row_group(label = "Pre-trial Conditions", rows = 13:19) %>%
+  tab_row_group(label = "Defendant Characteristics", rows = 1:12)
+```
+
+
+#### Cash Bail System
+
+```{r}
+data_trends_ov <- master_data %>%
+  filter(EligibleOffense == 1) %>%
+  mutate(
+    days_rel = as.numeric(baildate - as.Date("2018-02-22")),
+    
+    W2 = ifelse(days_rel >= 0, floor(days_rel / 14), floor((days_rel + 1) / 14) - 1)
+  )
+
+biweekly_avg <- data_trends_ov %>%
+  group_by(W2, EligibleOffense) %>%
+  summarise(
+    ROR = mean(ROR, na.rm = TRUE),
+    Jail = mean(Jail3days, na.rm = TRUE),
+    FTA = mean(hasfta, na.rm = TRUE),
+    Recidivism = mean(Rec6mo, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+ 
+  filter(W2 >= -12 & W2 <= 12 & W2 != 0) %>%
+  pivot_longer(cols = c(ROR, Jail, FTA, Recidivism), names_to = "Outcome", values_to = "Rate")
+
+scales_y <- list(
+  Outcome == "ROR" ~ scale_y_continuous(limits = c(0.4, 0.8), breaks = seq(0.4, 0.8, 0.1)),
+  Outcome == "Jail" ~ scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1)),
+  Outcome == "FTA" ~ scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1)),
+  Outcome == "Recidivism" ~ scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1))
+)
+
+biweekly_avg <- biweekly_avg %>%
+  mutate(Outcome = factor(Outcome, levels = c("ROR", "Jail", "FTA", "Recidivism")))
+
+# ggplot(biweekly_avg, aes(x = W2, y = Rate)) +
+#   geom_point(color = "grey70", size = 1.5) +
+#   
+#   
+#   geom_smooth(data = subset(biweekly_avg, W2 < 0), 
+#               method = "lm", formula = y ~ poly(x, 2), 
+#               se = FALSE, color = "black", size = 0.8) +
+#   
+#   geom_smooth(data = subset(biweekly_avg, W2 > 0), 
+#               method = "lm", formula = y ~ poly(x, 2), 
+#               se = FALSE, color = "black", size = 0.8) +
+#   
+#   geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
+#   
+#   facet_wrap(~Outcome, scales = "free_y") +
+#   
+#   facetted_pos_scales(y = scales_y) +
+#   
+#   scale_x_continuous(breaks = seq(-12, 12, 4), 
+#                      labels = function(x) x / 2) +
+#   
+#   theme_minimal() +
+#   labs(x = "Months relative to Feb. 22",
+#        y = "Bi-weekly Rate") +
+#   theme(panel.grid.minor = element_blank())
+        
+```
+
+
+```{r}
+# Figure 1a: ROR Time Trend
+p_eligible <- ggplot(subset(biweekly_avg, Outcome == "ROR"), aes(x = W2, y = Rate)) +
+  geom_point(color = "grey70", size = 1.5) +
+  
+  
+  geom_smooth(data = subset(biweekly_avg, W2 < 0 & Outcome == "ROR"), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_smooth(data = subset(biweekly_avg, W2 > 0 & Outcome == "ROR"), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
+  
+  scale_y_continuous(limits = c(0.4, 0.8), breaks = seq(0.4, 0.8, 0.1)) +
+  
+  scale_x_continuous(breaks = seq(-12, 12, 4), 
+                     labels = function(x) x / 2) +
+  
+  
+  theme_minimal() +
+  labs(title = "ROR",
+    x = "Months relative to Feb. 22",
+       y = "Bi-weekly ROR Rate") +
+  theme(panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+
+# Figure 1c: ROR for Ineligible Cases
+data_inel <- master_data %>%
+  filter(EligibleOffense == 0) %>%
+  mutate(
+    days_rel = as.numeric(baildate - as.Date("2018-02-22")),
+
+    W2 = ifelse(days_rel >= 0, floor(days_rel / 14), floor((days_rel + 1) / 14) - 1)
+  )
+
+# Bi-weekly ROR Rate
+biweekly_ror_inel <- data_inel %>%
+  group_by(W2) %>%
+  summarise(Rate = mean(ROR, na.rm = TRUE), .groups = "drop") %>%
+  filter(W2 >= -12 & W2 <= 11)
+
+p_ineligible <- ggplot(biweekly_ror_inel, aes(x = W2, y = Rate)) +
+ 
+  geom_point(color = "grey70", size = 1.2) +
+  
+  geom_smooth(data = filter(biweekly_ror_inel, W2 < 0), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "grey30", size = 0.8) +
+  
+  geom_smooth(data = filter(biweekly_ror_inel, W2 >= 0), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "grey30", size = 0.8) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
+  
+  scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1)) +
+  
+  scale_x_continuous(breaks = seq(-12, 12, 4), 
+                     labels = function(x) x / 2) +
+  
+  theme_minimal() +
+  labs(title = "ROR", 
+       subtitle = "(Ineligible Cases)",
+       x = "Months relative to Feb. 22", 
+       y = "Bi-weekly rate") +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    panel.grid.minor = element_blank()
+  )
+  
+```
+
+## Figure 1a: ROR Time Trend & Figure 1b: ROR for Ineligible Cases
+```{r}
+
+combined_ror_plot <- p_eligible + p_ineligible
+
+
+combined_ror_plot
+```
+
+#### Policy Reform
+#### Target Parameters and Controls
+### 1.3.3 Replication Results
+
+#### DiD TWFE
+
+```{r}
+## Data Preparation
+did_twfe <- master_data %>%
+  mutate(
+    # Creating past_fel from prior_fel 
+    past_fel = as.numeric(prior_fel > 0),
+    
+    # Creating Denied 
+    Denied = as.numeric(initialbailtype == "Denied"),
+    
+    # Addressing NAs
+    income_missing = as.numeric(is.na(defendantzipmedianhouseholdincom)),
+    poverty_missing = as.numeric(is.na(PctBelPov)),
+    
+    defendantzipmedianhouseholdincom = ifelse(is.na(defendantzipmedianhouseholdincom), 
+                                              mean(defendantzipmedianhouseholdincom, na.rm = TRUE), 
+                                              defendantzipmedianhouseholdincom),
+    
+    PctBelPov = ifelse(is.na(PctBelPov), 
+                       mean(PctBelPov, na.rm = TRUE), 
+                       PctBelPov),
+    
+    # Re-calculate or ensure PostElig is correct
+    PostElig = EligibleOffense * Post,
+  
+    off = as.factor(off),
+    yq = as.factor(yq),
+    DOW = as.factor(DOW), 
+    CommissionerName_input = as.factor(CommissionerName_input) 
+  )
+
+covariates <- c("defendantageatarrest", "male", "defendantisblack", "Hisp", 
+                "White", "defendantzipmedianhouseholdincom", "PctBelPov", 
+                "PD", "felony", "prior_FTA", "prior_9y", "past_fel", "income_missing", "poverty_missing")
+
+# Column 1: ROR (No controls)
+res_ror_1 <- feols(ROR ~ PostElig + EligibleOffense + Post, 
+                   cluster = ~off, data = did_twfe)
+
+# Column 2: ROR (With controls and Fixed Effects)
+res_ror_2 <- feols(ROR ~ PostElig + Post + .[covariates] | off + yq, 
+                   cluster = ~off, data = did_twfe)
+
+# Column 3: Jail (No controls)
+res_jail_3 <- feols(Jail3days ~ PostElig + EligibleOffense + Post, 
+                    cluster = ~off, data = did_twfe)
+
+# Column 4: Jail (With controls and Fixed Effects)
+res_jail_4 <- feols(Jail3days ~ PostElig + Post + .[covariates] | off + yq, 
+                    cluster = ~off, data = did_twfe)
+
+## Pre-period Means & Models
+mean_ror_pre <- CashBail %>% 
+  filter(EligibleOffense == 1, Post == 0) %>% 
+  summarise(mean = mean(ROR, na.rm = TRUE)) %>% pull(mean)
+
+mean_jail_pre <- CashBail %>% 
+  filter(EligibleOffense == 1, Post == 0) %>% 
+  summarise(mean = mean(Jail3days, na.rm = TRUE)) %>% pull(mean)
+
+# Model (1): ROR No Controls
+m1 <- feols(ROR ~ PostElig + Post + EligibleOffense, cluster = ~off, data = did_twfe)
+
+# Model (2): ROR With Controls & Fixed Effects
+m2 <- feols(ROR ~ PostElig + Post + .[covariates] | off + yq, cluster = ~off, data = did_twfe)
+
+# Model (3): Jail No Controls
+m3 <- feols(Jail3days ~ PostElig + Post + EligibleOffense, cluster = ~off, data = did_twfe)
+
+# Model (4): Jail With Controls & Fixed Effects
+m4 <- feols(Jail3days ~ PostElig + Post + .[covariates] | off + yq, cluster = ~off, data = did_twfe)
+
+## SUMMARY TABLE
+
+
+table_3 <- etable(m1, m2, m3, m4,
+       headers = list("ROR" = 2, "Jail" = 2),
+       dict = c(PostElig = "Eligible x Post 02/21"),
+       keep = "Eligible x Post 02/21",
+       
+       extralines = list(
+         "Controls"      = c("No", "Yes", "No", "Yes"),
+         "Mean dep. var." = c(round(mean_ror_pre, 3), round(mean_ror_pre, 3), 
+                             round(mean_jail_pre, 3), round(mean_jail_pre, 3))
+       ),
+      
+       digits = 4, 
+       digits.stats = "r0", 
+       fitstat = ~n,     
+       style.df = style.df(depvar.title = "", fixef.suffix = ""),
+       notes = "Standard errors, clustered at the offense level, are in parentheses."
+)
+
+mean_fta_pre <- master_data %>% 
+  filter(EligibleOffense == 1, Post == 0) %>% 
+  summarise(mean = mean(hasfta, na.rm = TRUE)) %>% pull(mean)
+
+mean_rec_pre <- master_data %>% 
+  filter(EligibleOffense == 1, Post == 0) %>% 
+  summarise(mean = mean(Rec6mo, na.rm = TRUE)) %>% pull(mean)
+
+# Model (1): FTA No Controls
+m5_1 <- feols(hasfta ~ PostElig + Post + EligibleOffense, cluster = ~off, data = did_twfe)
+
+# Model (2): FTA With Controls & Fixed Effects
+m5_2 <- feols(hasfta ~ PostElig + Post + .[covariates] | off + yq, 
+              cluster = ~off, data = did_twfe)
+
+# Model (3): Recidivism No Controls
+m5_3 <- feols(Rec6mo ~ PostElig + Post + EligibleOffense, cluster = ~off, data = did_twfe)
+
+# Model (4): Recidivism With Controls & Fixed Effects
+m5_4 <- feols(Rec6mo ~ PostElig + Post + .[covariates] | off + yq, 
+              cluster = ~off, data = did_twfe)
+
+#  SUMMARY TABLE 5
+table_5 <- etable(m5_1, m5_2, m5_3, m5_4,
+       headers = list("FTA" = 2, "Recidivism" = 2),
+       dict = c(PostElig = "Eligible x Post 02/21"),
+       keep = "Eligible x Post 02/21",
+       extralines = list(
+         "Controls"      = c("No", "Yes", "No", "Yes"),
+         "Mean dep. var." = c(round(mean_fta_pre, 3), round(mean_fta_pre, 3), 
+                             round(mean_rec_pre, 3), round(mean_rec_pre, 3))
+       ),
+       digits = 4, 
+       digits.stats = "r0",
+       fitstat = ~n,
+       style.df = style.df(depvar.title = "", fixef.suffix = ""),
+       notes = "Standard errors, clustered at the offense level, are in parentheses."
+)
+
+```
+
+##  Table 3: DiD Estimates of policy effect on ROR and Jail & Table 5: DiD Estimates of policy effect on FTA and Recidivism 
+```{r}
+table_6 <- etable(
+  m2, m4, m5_2, m5_4,
+  dict = c(PostElig = "Eligible x Post 02/21"),
+  keep = "Eligible x Post 02/21",
+  extralines = list(
+    "Mean dep. var." = c(round(mean_ror_pre, 3),
+                         round(mean_jail_pre, 3),
+                         round(mean_fta_pre, 3),
+                         round(mean_rec_pre, 3))
+  ),
+  digits = 4,
+  digits.stats = "r0",
+  fitstat = ~n,
+  style.df = style.df(depvar.title = "", fixef.suffix = ""),
+  notes = "Standard errors, clustered at the offense level, are in parentheses."
+)
+
+# Render with kableExtra for a clean academic look
+library(kableExtra)
+
+table_6 %>%
+  as.data.frame() %>%
+  kbl(caption = "Table x: DiD Estimates of ROR, Jail, FTA, and Recidivism",
+      booktabs = TRUE, 
+      align = "lcccc",
+      # This removes the extra column name row kable sometimes adds
+      col.names = c("Characteristic", "ROR", "Jail", "FTA", "Recidivism")) %>%
+  kable_classic(full_width = F, html_font = "Cambria") 
+
+```
+
+
+#### DiD Double ML
+#### Heterogeneity
+### 1.3.4 Reflection on DiD Assumptions
+#### Policy Context
+#### Event Study DiD
+#### Endogenous Responses
+#### Channels of Cash-Bail Reform Effects on Violations
+
+## Figure 2: Jail Time Trend 
+```{r}
+ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
+  geom_point(color = "grey70", size = 1.5) +
+  
+  
+  geom_smooth(data = subset(biweekly_avg, W2 < 0 & Outcome == "Jail"), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_smooth(data = subset(biweekly_avg, W2 > 0 & Outcome == "Jail"), 
+              method = "lm", formula = y ~ poly(x, 2), 
+              se = FALSE, color = "black", size = 0.8) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
+  
+  scale_y_continuous(limits = c(0, 0.4), breaks = seq(0, 0.4, 0.1)) +
+  
+  scale_x_continuous(breaks = seq(-12, 12, 4), 
+                     labels = function(x) x / 2) +
+  
+  theme_minimal() +
+  labs(title = "Jail",
+    x = "Months relative to Feb. 22",
+       y = "Bi-weekly Jail Rate") +
+  theme(panel.grid.minor = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+```
+### Table x: Characterisitcs Composition
+
+```{r}
+covars_to_test <- c("defendantageatarrest", "male", "defendantisblack", 
+                    "prior_FTA", "prior_9y", "past_fel", "felony")
+did_cov_data <- master_data %>%
+  filter(EligibleOffense == 1) %>%
+  mutate(
+    Denied = if_else(initialbailtype == "Denied", 1, 0),
+    past_fel = as.numeric(prior_fel > 0),
+    Released = if_else(Jail3days == 0, 1, 0)
+  )
+
+did_results <- map_df(covars_to_test, function(var) {
+  form <- as.formula(paste(var, "~ Post * Released"))
+  lm(form, data = did_cov_data) %>%
+    tidy() %>%
+    filter(term == "Post:Released") %>% 
+    mutate(Variable = var)
+})
+
+did_cov_table <- did_results %>%
+  select(Variable, estimate, std.error, p.value) %>%
+  mutate(
+    Status = if_else(p.value > 0.05, "Stable", "Shift Detected")
+  )
+
+
+did_cov_table_formatted <- did_cov_table %>%
+  gt() %>%
+  tab_header(
+    title = "DiD Test for Compositional Shifts"
+  ) %>%
+  cols_label(
+    Variable = "Characteristic",
+    estimate = "Interaction (Post × Released)",
+    std.error = "Std. Error",
+    p.value = "P-Value"
+  ) %>%
+  fmt_number(columns = c(estimate, std.error, p.value), decimals = 3) %>%
+  tab_style(
+    style = cell_text(color = "darkgreen", weight = "bold"),
+    locations = cells_body(columns = Status, rows = Status == "Stable")
+  )
+
+did_cov_table_formatted
+```
+
+
+### 1.3.5 Feedback
+
+
+
