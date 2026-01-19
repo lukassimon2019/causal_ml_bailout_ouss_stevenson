@@ -446,27 +446,8 @@ We observe $(Y_i, D_i, T_i, X_i)$ where $D_i \in \{0,1\}$ is the treatment varia
 
 For the Double ML estimation we use the same dataset with the same target parameters and covariates as in the TWFE implementation.   
 Here now a brief explanation of how we constructed the custom Double ML function:
-We observe $(Y_i, D_i, T_i, X_i)$ where $D_i \in \{0,1\}$ is the treatment variable and $T_i \in \{0,1\}$ is the time variable. The parameter of interest is the ATT (average treatment effect on the treated): $$\theta_0 = E[(Y(1) - Y(0)| D=1 ]$$ identified in Cross Sectional DiD under parallel trend and standard overlap assumption.
+We observe $(Y_i, D_i, T_i, X_i)$ where $D_i \in \{0,1\}$ is the treatment variable and $T_i \in \{0,1\}$ is the time variable. The parameter of interest is the ATT (average treatment effect on the treated): $$\theta_0 = E[(Y(1) - Y(0)| D=1, \, T=1 ]$$ identified in Cross Sectional DiD under parallel trend and standard overlap assumption.
 
-
-$$
-\begin{aligned}
-\theta_0 
-&:= \mathbb{E}\big[ Y_1(1) - Y_1(0) \mid D = 1 \big] \\[0.5em]
-&= \mathbb{E}\big[ Y_1(1) \mid D = 1 \big] - \mathbb{E}\big[ Y_0(0) \mid D = 1 \big] \\[0.5em]
-&\quad - \Big( \mathbb{E}\big[ Y_1(0) \mid D = 1 \big] - \mathbb{E}\big[ Y_0(0) \mid D = 1 \big] \Big) \\[0.5em]
-&= \Delta_{D=1}(1) - \Delta_{D=1}(0) \qquad \text{(Parallel Trends)} \\[0.5em]
-&= \Delta_{D=1}(1) - \Delta_{D=0}(0),
-\end{aligned}
-$$ 
-where
-
-
-$$
-\Delta_{D=d}(t) := \mathbb{E}\big[ Y_1(t) - Y_0(t) \mid D = d \big].
-$$
-
-The ATT is therefore identified as the difference in outcome changes between treated and untreated units.
 
 We use a doubly robust pooled cross section score to get the parameter estimate $\hat{\theta}$ as well as the influence function $\hat{\psi}(\theta)$. To get the score we need to estimate the nuisance parameters:  $$m_0(X) = P(D=1|X)$$ as well as the outcome regressions for each cell $(d,t)$ which is 
 
@@ -477,7 +458,7 @@ with the given nuisance parameter function. Since the given function does not al
 We then constructed $\psi_a$ and $\psi_b$ based on the score provided by the [DoubleML](https://docs.doubleml.org/stable/guide/scores.html#id4) documentation. Using this we identify $\theta$ by solving the linear moment equation: 
 
 $$ 
-E[\psi_a \theta + \psi_b] = 0 \Rightarrow \theta = - \frac{E_i[\psi_b]}{E_i[\psi_a]}
+E[\psi_a \theta_{0} + \psi_b] = 0 \Rightarrow \theta_{0} = - \frac{E_i[\psi_b]}{E_i[\psi_a]}
 $$ 
 To get estimates of $\theta$, we replaced the population averages with sample means. Afterward we constructed the influence function 
 
