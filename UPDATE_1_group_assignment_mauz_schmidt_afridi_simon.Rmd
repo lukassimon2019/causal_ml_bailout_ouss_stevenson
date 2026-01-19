@@ -229,7 +229,7 @@ p_ineligible <- ggplot(biweekly_ror_inel, aes(x = W2, y = Rate)) +
   
 ```
 
-## Figure 1a: ROR Time Trend & Figure 1b: ROR for Ineligible Cases
+##### Figure 1a: ROR Time Trend & Figure 1b: ROR for Ineligible Cases
 
 ```{r}
 
@@ -769,7 +769,7 @@ Overall we can summarize that we found similar results through Double ML as also
 
 #### DML DiD estimates of ATT and GATT
 
-#### Table ?: ATT Results 
+##### Table ?: ATT Results 
 ```{r eval=FALSE}
 
 # Extract ATT from first GATT variable results (they all have the same ATT)
@@ -825,7 +825,7 @@ $$ Solving for $\tau_g$ gives $$
 }
 $$ which is the GATT estimator implied by the same score that identifies the ATT.
 
-#### GATT Results Summary
+
 ```{r eval=FALSE}
 # Summary Table for GATT, dependent variable = hasfta
 groups <- c("black_not_hisp", "white_not_hisp", "hisp")
@@ -958,25 +958,25 @@ summary_table_Jail3days_formatted <- summary_table_Jail3days %>%
 
 ```
 
-# Table ?: GATT for Dependent Variablehasfta
+##### Table ?: GATT for Dependent Variablehasfta
 ```{r eval=FALSE}
 summary_table_hasfta_formatted 
 ```
 
 
-# Table ?: GATT for Dependent Variable Rec6mo
+##### Table ?: GATT for Dependent Variable Rec6mo
 ```{r eval=FALSE}
 summary_table_Rec6mo_formatted 
 ```
 
 
-# Table ?: GATT for Dependent Variable ROR
+##### Table ?: GATT for Dependent Variable ROR
 ```{r eval=FALSE}
 summary_table_ROR_formatted 
 ```
 
 
-# Table ?: GATT for Dependent Variable Jail
+##### Table ?: GATT for Dependent Variable Jail
 ```{r eval=FALSE}
 summary_table_Jail3days_formatted 
 ```
@@ -986,14 +986,41 @@ For brevity reasons we will here only interpret the heterogeneous effect estimat
 ### 1.3.4 Reflection on DiD Assumptions
 
 #### Policy Context
+The district attorney, who would pass the no-cash bail reform in February 2018, was elected to office in November 2017, and before his election success already promised that he would implement the no cash-bail reform. Importantly, the exact timing and extent of the reforms was unknown before February 2018. This implies that significant anticipation effects in the month before the reform are unlikely.  
+
+The parallel trends assumption on the other hand would be violated if there were other reforms happening concurrently in Philadelphia. In that case even being able to show that prior to the reform trends were parallel would not be enough. The authors explain that there was only one other judicial reform around that time. On February 15, the DA’s office announced a change in charging practices for marijuana possession, retail theft, and sex work. These cases are therefore removed from the analysis, which should alleviate the problem.
 
 #### Event Study DiD
+After considering the policy context and removing cases that were affected by the parallel reform, we run an event-study version of the DiD to confirm that the no-anticipation and parallel trends assumption are fulfilled at least in the past. The authors do this by running a TWFE with monthly lags and leads. We implement the event study using Double ML.
+
+$$
+Y_{it} = \alpha_{t} + \beta Eligible_{i} + \sum_{t \neq -1} \delta_{t} Eligible_{i} + \theta \mathbf{X}_{i} + \epsilon_{i}.
+$$
+
+
+If the no-anticipation and parallel trends hold then being eligible should only make a difference for the post-treatment months.   
+
+Concerning the parallel trends assumption the plots show mixed evidence. Only for the RoR outcome it is clearly recognizable that the post-treatment DiD coefficients are clearly more different from zero than the lagged months before the treatment. Especially for the recidivism trends do not seem parallel. In the 5 months before the reform the eligible group experienced a decline in recidivism relative to the trend in the control group.   
+
+Concerning the no-anticipation effect the ROR outcome the t=-1 month seems mostly on line with the previous trends. Only the ROR and jail outcome coefficients behave a bit different at t=-1.  
+
+Overall we can summarize that trends seem to be relatively but not perfectly parallel. Only for the recidivism coefficient are the lagged coefficients different from 0 at the 5% level. When revisiting this analysis, one could attempt to include more powerful covariates in order to make trends conditionally truly parallel.
 
 #### Endogenous Responses
+A major threat to this specific study is that legal actors might "game the system". For example: Police might change who they arrest for "eligible" vs. "ineligible" crimes, or prosecutors might "upcharge" a defendant (assigning a more serious lead charge) to make them ineligible for the No-Cash-Bail policy. This would undermine the identification result of the DiD method, because the groups we compare in the pre- and post period are no longer the same. Controlling for some covariates as we already do wouldn’t solve this problem, as an endogenous change in arrest or charging patterns likely depends on important unobserved covariates like the manner in which the defendant presents themselves during the bail hearing.
+
+The authors test for such a potential change in the legal actors’ responses to the reform by running DiDs with different target parameters, namely the share of defendants whose case the prosecutor completely dropped (Percent of declined), the share whose case they upcharged and the share whose case they downcharged. Furthermore they ran a regression on the weekly number of arrests and cases to test whether the absolute number of defendant changed post-reform. We would have replicated the DiD analyses with Double ML, but unfortunately the required data was not published by the authors. Therefore we will interpret table 2 from the original paper.
+
+#insert table 2 screenshot
+
+![Table 2: Endogenous Responses](screenshot_table_2.png)
+
+Indeed the results show that the different number of arrests and cases as well as the share of declined, up- and downcharged was not influenced by the reform. This confirms that there was no endogenous response from legal actors. Thus the integrity of our DiD identification is maintained.
+
 
 #### Channels of Cash-Bail Reform Effects on Violations
 
-## Figure 2: Jail Time Trend
+##### Figure 2: Jail Time Trend
 
 ```{r}
 ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
@@ -1023,7 +1050,7 @@ ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
         plot.title = element_text(hjust = 0.5))
 ```
 
-### Table x: Characterisitcs Composition
+##### Table x: Characterisitcs Composition
 
 ```{r}
 covars_to_test <- c("defendantageatarrest", "male", "defendantisblack",
