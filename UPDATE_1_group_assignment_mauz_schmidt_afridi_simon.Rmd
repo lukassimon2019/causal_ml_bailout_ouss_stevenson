@@ -27,6 +27,8 @@ library(gtsummary)
 library(DoubleML)
 library(kableExtra)
 library(cowplot)
+library(NuisanceParameters)
+library(hdm)
 ```
 
 ```{r}
@@ -247,7 +249,7 @@ p_ineligible <- ggplot(biweekly_ror_inel, aes(x = W2, y = Rate)) +
   labs(title = "ROR", 
        subtitle = "(Ineligible Cases)",
        x = "Months relative to Feb. 22", 
-       y = "Bi-weekly rate") +
+       y = "Bi-weekly ROR rate") +
   theme(
     plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
     plot.subtitle = element_text(hjust = 0.5, size = 10),
@@ -260,11 +262,9 @@ p_ineligible <- ggplot(biweekly_ror_inel, aes(x = W2, y = Rate)) +
 
 ```{r}
 
-#combined_ror_plot <- p_eligible + p_ineligible
 plot_grid(p_eligible, p_ineligible,
           ncol = 2, nrow = 1)
 
-#combined_ror_plot
 ```
 
 #### Policy Reform
@@ -279,6 +279,7 @@ plot_grid(p_eligible, p_ineligible,
 ## Data Preparation
 did_twfe <- master_data %>%
   mutate(
+    yq_numeric = as.numeric(as.factor(yq)),
     # Creating past_fel from prior_fel 
     past_fel = as.numeric(prior_fel > 0),
     
@@ -327,11 +328,11 @@ res_jail_4 <- feols(Jail3days ~ PostElig + Post + .[covariates] | off + yq,
                     cluster = ~off, data = did_twfe)
 
 ## Pre-period Means & Models
-mean_ror_pre <- CashBail %>% 
+mean_ror_pre <- master_data %>% 
   filter(EligibleOffense == 1, Post == 0) %>% 
   summarise(mean = mean(ROR, na.rm = TRUE)) %>% pull(mean)
 
-mean_jail_pre <- CashBail %>% 
+mean_jail_pre <- master_data %>% 
   filter(EligibleOffense == 1, Post == 0) %>% 
   summarise(mean = mean(Jail3days, na.rm = TRUE)) %>% pull(mean)
 
@@ -348,7 +349,6 @@ m3 <- feols(Jail3days ~ PostElig + Post + EligibleOffense, cluster = ~off, data 
 m4 <- feols(Jail3days ~ PostElig + Post + .[covariates] | off + yq, cluster = ~off, data = did_twfe)
 
 ## SUMMARY TABLE
-
 
 table_3 <- etable(m1, m2, m3, m4,
        headers = list("ROR" = 2, "Jail" = 2),
@@ -473,6 +473,506 @@ $$ Solving for $\tau_g$ gives $$
 }
 $$ which is the GATT estimator implied by the same score that identifies the ATT.
 
+#### DML DiD estimates of ATT and GATT
+
+```{r}
+
+doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf = 5,
+                                 feature_eng = FALSE, bin_cut = 0.02, corr_cut = 0.9,
+                                 cluster_var = NULL,
+                                 heterogeneity = FALSE, gate_var = NULL) {
+  
+  Y  <- data[[y_var]]
+  D  <- as.numeric(data[[d_var]])
+  Tt <- as.numeric(data[[t_var]])
+  X_0 <- as.matrix(data[, x_vars])
+  n  <- length(Y)
+  
+  if (!is.null(cluster_var)) {
+    C <- data[[cluster_var]]
+  }
+  
+  if (feature_eng) {
+    X_expanded <- design_matrix(X_0, int = "all", int_d = 2,
+                                poly = "all", poly_d = 2)
+    X <- data_screen(X_expanded, treat = D,
+                     bin_cut = bin_cut, corr_cut = corr_cut,
+                     quiet = TRUE)
+  } else {
+    X <- X_0
+  }
+  
+  # Kombiniertes Treatment: (D,T)
+  DT_combined <- 2 * D + Tt
+  
+  # ---- 1) m(X)
+  np_m <- nuisance_parameters(
+    NuPa = "D.hat", X = X, D = D,
+    methods = methods, cf = cf,
+    stacking = "short", stratify = TRUE, ensemble_type = "nnls",
+    quiet = TRUE
+  )
+  m_hat <- as.numeric(np_m$nuisance_parameters$D.hat)
+  
+  # ---- 2) g(d,t,X)
+  np_g <- nuisance_parameters(
+    NuPa = "Y.hat.d",
+    X = X,
+    Y = Y,
+    D = DT_combined,
+    methods = methods,
+    cf = cf,
+    stacking = "short",
+    stratify = TRUE,
+    ensemble_type = "nnls",
+    quiet = TRUE
+  )
+  
+  g00_hat <- np_g$nuisance_parameters$Y.hat.d[, 1]  # D=0,T=0
+  g01_hat <- np_g$nuisance_parameters$Y.hat.d[, 2]  # D=0,T=1
+  g10_hat <- np_g$nuisance_parameters$Y.hat.d[, 3]  # D=1,T=0
+  g11_hat <- np_g$nuisance_parameters$Y.hat.d[, 4]  # D=1,T=1
+  
+  # ---- 3) Score (ATT)
+  psi_a <- -D / mean(D)
+  
+  psi_b <- D / mean(D) * (g11_hat - g10_hat - (g01_hat - g00_hat)) +
+    (Tt * D / mean(D * Tt)) * (Y - g11_hat) -
+    (D * (1 - Tt) / mean(D * (1 - Tt))) * (Y - g10_hat) -
+    (m_hat * (1 - D) * Tt / (1 - m_hat)) /
+    mean(m_hat * (1 - D) * Tt / (1 - m_hat)) * (Y - g01_hat) +
+    (m_hat * (1 - D) * (1 - Tt) / (1 - m_hat)) /
+    mean(m_hat * (1 - D) * (1 - Tt) / (1 - m_hat)) * (Y - g00_hat)
+  
+  theta_hat <- -mean(psi_b) / mean(psi_a)
+  
+  psi <- psi_a * theta_hat + psi_b
+  influence_fun <- -1 / mean(psi_a) * psi
+  
+  if (is.null(cluster_var)) {
+    se_hat <- sqrt(mean(psi^2) / (mean(psi_a)^2 * n))
+    clustered <- FALSE
+  } else {
+    clusters <- unique(C)
+    cluster_sums_squared <- rep(NA_real_, length(clusters))
+    index <- 1
+    for (cl in clusters) {
+      cluster_sums_squared[index] <- sum(influence_fun[C == cl])^2
+      index <- index + 1
+    }
+    var_hat <- 1 / n * sum(cluster_sums_squared)
+    se_hat <- sqrt(var_hat / n)
+    clustered <- TRUE
+  }
+  
+  # ---- 4) Return object (base)
+  out <- list(
+    coefficients = c(ATT = theta_hat),
+    se = se_hat,
+    clustered = clustered,
+    t = theta_hat / se_hat,
+    p = 2 * (1 - pnorm(abs(theta_hat / se_hat))),
+    ci_lower = theta_hat - 1.96 * se_hat,
+    ci_upper = theta_hat + 1.96 * se_hat,
+    N = n,
+    N_treated = sum(D),
+    N_control = sum(1 - D),
+    N_post = sum(Tt),
+    N_pre = sum(1 - Tt),
+    y_var = y_var,
+    d_var = d_var,
+    t_var = t_var,
+    x_vars = x_vars,
+    n_covariates = ncol(X),
+    cf = cf,
+    methods = names(methods),
+    feature_eng = feature_eng,
+    cluster_var = cluster_var
+  )
+  
+  # ------ 5) GATE  -------
+  
+  if (heterogeneity) {
+    
+    if (is.null(gate_var)) stop("heterogeneity = TRUE requires gate_var")
+    
+    G <- as.factor(data[[gate_var]])
+    groups <- levels(G)
+    
+    # containers
+    tau_hat <- rep(NA_real_, length(groups))
+    names(tau_hat) <- groups
+    
+    IF_mat <- matrix(NA_real_, nrow = n, ncol = length(groups))
+    colnames(IF_mat) <- groups
+    
+    for (j in seq_along(groups)) {
+      g <- groups[j]
+      I_g <- as.numeric(G == g)
+      
+      denom <- mean(I_g * psi_a)
+      if (abs(denom) < 1e-12) {
+        stop(paste0("Group ", g, " has near-zero denom E[I_g*psi_a]."))
+      }
+      
+      num <- mean(I_g * psi_b)
+      tau_hat[g] <- - num / denom
+      
+      # Influence function for tau_g
+      psi_g <- I_g * (psi_a * tau_hat[g] + psi_b)
+      IF_mat[, j] <- -1 / denom * psi_g
+    }
+    
+    # SEs using the same logic as ATT, applied per group
+    gate_se <- rep(NA_real_, length(groups))
+    names(gate_se) <- groups
+    
+    if (is.null(cluster_var)) {
+      for (j in seq_along(groups)) {
+        gate_se[j] <- sqrt(mean(IF_mat[, j]^2) / n)
+      }
+      gate_clustered <- FALSE
+    } else {
+      clusters <- unique(C)
+      for (j in seq_along(groups)) {
+        infl <- IF_mat[, j]
+        cluster_sums_squared <- rep(NA_real_, length(clusters))
+        k <- 1
+        for (cl in clusters) {
+          cluster_sums_squared[k] <- sum(infl[C == cl])^2
+          k <- k + 1
+        }
+        var_hat_g <- 1 / n * sum(cluster_sums_squared)
+        gate_se[j] <- sqrt(var_hat_g / n)
+      }
+      gate_clustered <- TRUE
+    }
+    
+    gate_t <- tau_hat / gate_se
+    gate_p <- 2 * (1 - pnorm(abs(gate_t)))
+    
+    out$gate <- list(
+      tau = tau_hat,
+      se = gate_se,
+      clustered = gate_clustered,
+      t = gate_t,
+      p = gate_p,
+      ci_lower = tau_hat - 1.96 * gate_se,
+      ci_upper = tau_hat + 1.96 * gate_se,
+      groups = groups,
+      N = n,
+      gate_var = gate_var,
+      influence_function = IF_mat
+    )
+  }
+  class(out) <- "doubleML_did_cs_gate"
+  return(out)
+}
+
+
+```
+
+
+```{r}
+# data preparation (was don alread in did_twfe, but I addedyq_numeric)
+CashBail <- read_stata("CashBail.dta") %>%
+  mutate(
+    yq_numeric = as.numeric(as.factor(yq)),
+    # Creating past_fel from prior_fel
+    past_fel = as.numeric(prior_fel > 0),
+    
+    # Creating Denied
+    Denied = as.numeric(initialbailtype == "Denied"),
+    
+    # Addressing NAs
+    income_missing = as.numeric(is.na(defendantzipmedianhouseholdincom)),
+    poverty_missing = as.numeric(is.na(PctBelPov)),
+    
+    defendantzipmedianhouseholdincom = ifelse(
+      is.na(defendantzipmedianhouseholdincom),
+      mean(defendantzipmedianhouseholdincom, na.rm = TRUE),
+      defendantzipmedianhouseholdincom
+    ),
+    
+    PctBelPov = ifelse(is.na(PctBelPov), mean(PctBelPov, na.rm = TRUE), PctBelPov),
+    
+    PostElig = EligibleOffense * Post,
+    
+    off = as.factor(off),
+    yq = as.factor(yq),
+    DOW = as.factor(DOW),
+    CommissionerName_input = as.factor(CommissionerName_input),
+    # add a group_variable that indicates whether a defendant is white and not hispanic,         black and not hispanic or hispanic
+    ethnicity = factor(
+      if_else(
+        defendantisblack == 1 & Hisp == 0,
+        "black_not_hisp",
+        if_else(White == 1 & Hisp == 0, "white_not_hisp", 
+                if_else(Hisp == 1, "hisp", NA))
+      ),
+      levels = c("black_not_hisp", "white_not_hisp", "hisp")
+    )
+  )
+CashBail <- filter(CashBail, !is.na(ethnicity)) 
+
+
+```
+
+```{r}
+# defining inputs
+outcomes_table3 <- c("ROR", "Jail3days")
+outcomes_table5 <- c("hasfta", "Rec6mo")
+all_outcomes <- c(outcomes_table3, outcomes_table5)
+
+covariates <- c(
+  "defendantisblack",
+  "Hisp",
+  "White",
+  "defendantageatarrest",
+  "male",
+  "defendantzipmedianhouseholdincom",
+  "PctBelPov",
+  "PD",
+  "felony",
+  "prior_FTA",
+  "prior_9y",
+  "past_fel",
+  "income_missing",
+  "poverty_missing"
+)
+
+# ML Methods
+my_methods <- list(D.hat = list(
+  m1 = list(method = "ranger_prop", tune = "fold"),
+  m2 = list(method = "logit")
+),
+
+Y.hat.d = list(
+  m1 = list(method = "ranger", tune = "fold"),
+  m2 = list(method = "lasso")
+))
+```
+
+
+```{r}
+# Store the estimation results for each outcome variable
+dml_gate_results <- list()
+set.seed(1234) 
+
+# (ATT is automatically computed as part of GATT estimation)
+for(y in all_outcomes) {
+  message("Running ATT estimation for outcome: ", y)
+  
+  dml_results[[y]] <- doubleML_did_cs_gate(
+    data = CashBail,
+    y_var = y,
+    d_var = "EligibleOffense",
+    t_var = "Post",
+    x_vars = covariates,
+    methods = my_methods,
+    cf = 5,              
+    cluster_var = "off",
+    heterogeneity = TRUE,
+    gate_var = "ethnicity",
+    feature_eng = TRUE
+  )
+}
+```
+
+#### Table ?: ATT Results 
+```{r}
+
+# Extract ATT from first GATT variable results (they all have the same ATT)
+final_dml_table <- do.call(rbind, lapply(all_outcomes, function(y) {
+  res <- dml_gate_results[[y]] # Take ATT from first gate_var
+  data.frame(
+    Outcome = y,
+    ATT = res$coefficients["ATT"],
+    Std_Error = res$se,
+    t_stat = res$t,
+    p_val = res$p,
+    Lower_CI = res$ci_lower,
+    Upper_CI = res$ci_upper
+  )
+}))
+
+# make the  ATT table more beautiful
+final_dm_rtable_beautiful <- final_dml_table %>%
+  select(!c(Std_Error, t_stat)) %>%
+  gt() %>%
+  tab_header(
+    title = "DiD ATT Results"
+  ) %>%
+  cols_label(
+    Outcome = "Outcome",
+    ATT = "ATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Outcome, ATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+final_dm_rtable_beautiful
+```
+
+
+#### GATT Results Summary
+```{r}
+# Summary Table for GATT, dependent variable = hasfta
+groups <- c("black_not_hisp", "white_not_hisp", "hisp")
+summary_table_hasfta <- data.frame(
+    Group = c("black", "white", "hispanic"),
+    GATT = sapply(groups, function(x){dml_gate_results$hasfta$gate$tau[[x]]}),
+    Std_Error = sapply(groups, function(x){dml_gate_results$hasfta$gate$se[[x]]}),
+    t_stat = sapply(groups, function(x){dml_gate_results$hasfta$gate$t[[x]]}),
+    p_val = sapply(groups, function(x){dml_gate_results$hasfta$gate$p[[x]]}),
+    Lower_CI = sapply(groups, function(x){dml_gate_results$hasfta$gate$ci_lower[[x]]}),
+    Upper_CI = sapply(groups, function(x){dml_gate_results$hasfta$gate$ci_upper[[x]]})
+  ) %>% select(!c(t_stat, Std_Error))
+rownames(summary_table_hasfta) <- NULL
+
+
+summary_table_hasfta_formatted <- summary_table_hasfta %>%
+  gt() %>%
+  tab_header(
+    title = "DiD GATT Results for hasfta"
+  ) %>%
+  cols_label(
+    Group = "Group",
+    GATT = "GATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Group, GATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+
+
+```
+
+
+
+```{r}
+# Summary Table for GATT, dependent variable = Rec6mo
+summary_table_Rec6mo <- data.frame(
+    Group = c("black", "white", "hispanic"),
+    GATT = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$tau[[x]]}),
+    Std_Error = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$se[[x]]}),
+    t_stat = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$t[[x]]}),
+    p_val = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$p[[x]]}),
+    Lower_CI = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$ci_lower[[x]]}),
+    Upper_CI = sapply(groups, function(x){dml_gate_results$Rec6mo$gate$ci_upper[[x]]})
+  ) %>% select(!c(t_stat, Std_Error))
+rownames(summary_table_Rec6mo) <- NULL
+
+
+summary_table_Rec6mo_formatted <- summary_table_Rec6mo %>%
+  gt() %>%
+  tab_header(
+    title = "DiD GATT Results for Rec6mo"
+  ) %>%
+  cols_label(
+    Group = "Group",
+    GATT = "GATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Group, GATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+```
+
+
+```{r}
+# Summary tabble DiD GATT, dep. variable = ROR
+summary_table_ROR <- data.frame(
+    Group = c("black", "white", "hispanic"),
+    GATT = sapply(groups, function(x){dml_gate_results$ROR$gate$tau[[x]]}),
+    Std_Error = sapply(groups, function(x){dml_gate_results$ROR$gate$se[[x]]}),
+    t_stat = sapply(groups, function(x){dml_gate_results$ROR$gate$t[[x]]}),
+    p_val = sapply(groups, function(x){dml_gate_results$ROR$gate$p[[x]]}),
+    Lower_CI = sapply(groups, function(x){dml_gate_results$ROR$gate$ci_lower[[x]]}),
+    Upper_CI = sapply(groups, function(x){dml_gate_results$ROR$gate$ci_upper[[x]]})
+  ) %>% select(!c(t_stat, Std_Error))
+rownames(summary_table_ROR) <- NULL
+
+
+summary_table_ROR_formatted <- summary_table_ROR %>%
+  gt() %>%
+  tab_header(
+    title = "DiD GATT Results for ROR"
+  ) %>%
+  cols_label(
+    Group = "Group",
+    GATT = "GATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Group, GATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+
+
+
+```
+
+
+```{r}
+# Summary Table for DiiD GATT, dep. variable = Jail3days
+summary_table_Jail3days <- data.frame(
+    Group = c("black", "white", "hispanic"),
+    GATT = sapply(groups, function(x){dml_gate_results$Jail3days$gate$tau[[x]]}),
+    Std_Error = sapply(groups, function(x){dml_gate_results$Jail3days$gate$se[[x]]}),
+    t_stat = sapply(groups, function(x){dml_gate_results$Jail3days$gate$t[[x]]}),
+    p_val = sapply(groups, function(x){dml_gate_results$Jail3days$gate$p[[x]]}),
+    Lower_CI = sapply(groups, function(x){dml_gate_results$Jail3days$gate$ci_lower[[x]]}),
+    Upper_CI = sapply(groups, function(x){dml_gate_results$Jail3days$gate$ci_upper[[x]]})
+  ) %>% select(!c(t_stat, Std_Error))
+rownames(summary_table_Jail3days) <- NULL
+
+
+summary_table_Jail3days_formatted <- summary_table_Jail3days %>%
+  gt() %>%
+  tab_header(
+    title = "DiD GATT Results for Jail3days"
+  ) %>%
+  cols_label(
+    Group = "Group",
+    GATT = "GATT",
+    p_val= "P-Value",
+    Lower_CI = "Lower_CI",
+    Upper_CI = "Upper_CI"
+  ) %>%
+  fmt_number(columns = c(Group, GATT, p_val, Lower_CI, Upper_CI), decimals = 3) 
+
+
+
+```
+
+# Table ?: GATT for Dependent Variablehasfta
+```{r}
+summary_table_hasfta_formatted 
+```
+
+
+# Table ?: GATT for Dependent Variable Rec6mo
+```{r}
+summary_table_Rec6mo_formatted 
+```
+
+
+# Table ?: GATT for Dependent Variable ROR
+```{r}
+summary_table_ROR_formatted 
+```
+
+
+# Table ?: GATT for Dependent Variable Jail
+```{r}
+summary_table_Jail3days_formatted 
+```
+
+
 ### 1.3.4 Reflection on DiD Assumptions
 
 #### Policy Context
@@ -516,10 +1016,10 @@ ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
 ### Table x: Characterisitcs Composition
 
 ```{r}
-covars_to_test <- c("defendantageatarrest", "male", "defendantisblack", 
+covars_to_test <- c("defendantageatarrest", "male", "defendantisblack",
                     "prior_FTA", "prior_9y", "past_fel", "felony")
 did_cov_data <- master_data %>%
-  filter(EligibleOffense == 1) %>%
+  filter(EligibleOffense == 1) 
   mutate(
     Denied = if_else(initialbailtype == "Denied", 1, 0),
     past_fel = as.numeric(prior_fel > 0),
@@ -527,11 +1027,11 @@ did_cov_data <- master_data %>%
   )
 
 did_results <- map_df(covars_to_test, function(var) {
-  form <- as.formula(paste(var, "~ Post * Released"))
-  lm(form, data = did_cov_data) %>%
-    tidy() %>%
-    filter(term == "Post:Released") %>% 
-    mutate(Variable = var)
+  form <- as.formula(paste(var, "~ Post * Released")) %>%
+   lm(form, data = did_cov_data) %>%
+    tidy()  %>%
+     filter(term == "Post:Released") %>%
+     mutate(Variable = var)
 })
 
 did_cov_table <- did_results %>%
