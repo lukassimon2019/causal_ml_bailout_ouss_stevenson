@@ -29,6 +29,7 @@ library(kableExtra)
 library(cowplot)
 library(NuisanceParameters)
 library(hdm)
+library(broom)
 ```
 
 ```{r}
@@ -754,7 +755,7 @@ Y.hat.d = list(
 ```
 
 
-```{r}
+```{r eval=FALSE}
 # Store the estimation results for each outcome variable
 dml_gate_results <- list()
 set.seed(1234) 
@@ -780,7 +781,7 @@ for(y in all_outcomes) {
 ```
 
 #### Table ?: ATT Results 
-```{r}
+```{r eval=FALSE}
 
 # Extract ATT from first GATT variable results (they all have the same ATT)
 final_dml_table <- do.call(rbind, lapply(all_outcomes, function(y) {
@@ -817,7 +818,7 @@ final_dm_rtable_beautiful
 
 
 #### GATT Results Summary
-```{r}
+```{r eval=FALSE}
 # Summary Table for GATT, dependent variable = hasfta
 groups <- c("black_not_hisp", "white_not_hisp", "hisp")
 summary_table_hasfta <- data.frame(
@@ -852,7 +853,7 @@ summary_table_hasfta_formatted <- summary_table_hasfta %>%
 
 
 
-```{r}
+```{r eval=FALSE}
 # Summary Table for GATT, dependent variable = Rec6mo
 summary_table_Rec6mo <- data.frame(
     Group = c("black", "white", "hispanic"),
@@ -883,7 +884,7 @@ summary_table_Rec6mo_formatted <- summary_table_Rec6mo %>%
 ```
 
 
-```{r}
+```{r eval=FALSE}
 # Summary tabble DiD GATT, dep. variable = ROR
 summary_table_ROR <- data.frame(
     Group = c("black", "white", "hispanic"),
@@ -917,7 +918,7 @@ summary_table_ROR_formatted <- summary_table_ROR %>%
 ```
 
 
-```{r}
+```{r eval=FALSE}
 # Summary Table for DiiD GATT, dep. variable = Jail3days
 summary_table_Jail3days <- data.frame(
     Group = c("black", "white", "hispanic"),
@@ -950,25 +951,25 @@ summary_table_Jail3days_formatted <- summary_table_Jail3days %>%
 ```
 
 # Table ?: GATT for Dependent Variablehasfta
-```{r}
+```{r eval=FALSE}
 summary_table_hasfta_formatted 
 ```
 
 
 # Table ?: GATT for Dependent Variable Rec6mo
-```{r}
+```{r eval=FALSE}
 summary_table_Rec6mo_formatted 
 ```
 
 
 # Table ?: GATT for Dependent Variable ROR
-```{r}
+```{r eval=FALSE}
 summary_table_ROR_formatted 
 ```
 
 
 # Table ?: GATT for Dependent Variable Jail
-```{r}
+```{r eval=FALSE}
 summary_table_Jail3days_formatted 
 ```
 
@@ -1019,7 +1020,7 @@ ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
 covars_to_test <- c("defendantageatarrest", "male", "defendantisblack",
                     "prior_FTA", "prior_9y", "past_fel", "felony")
 did_cov_data <- master_data %>%
-  filter(EligibleOffense == 1) 
+  filter(EligibleOffense == 1) %>%
   mutate(
     Denied = if_else(initialbailtype == "Denied", 1, 0),
     past_fel = as.numeric(prior_fel > 0),
@@ -1027,11 +1028,11 @@ did_cov_data <- master_data %>%
   )
 
 did_results <- map_df(covars_to_test, function(var) {
-  form <- as.formula(paste(var, "~ Post * Released")) %>%
-   lm(form, data = did_cov_data) %>%
-    tidy()  %>%
-     filter(term == "Post:Released") %>%
-     mutate(Variable = var)
+  form <- as.formula(paste(var, "~ Post * Released"))
+  lm(form, data = did_cov_data) %>%
+    tidy() %>%
+    filter(term == "Post:Released") %>%
+    mutate(Variable = var)
 })
 
 did_cov_table <- did_results %>%
