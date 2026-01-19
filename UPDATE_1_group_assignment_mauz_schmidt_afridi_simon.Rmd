@@ -447,14 +447,14 @@ We observe $(Y_i, D_i, T_i, X_i)$ where $D_i \in \{0,1\}$ is the treatment varia
 
 For the Double ML estimation we use the same dataset with the same target parameters and covariates as in the TWFE implementation.   
 Here now a brief explanation of how we constructed the custom Double ML function:
-We observe $(Y_i, D_i, T_i, X_i)$ where $D_i \in \{0,1\}$ is the treatment variable and $T_i \in \{0,1\}$ is the time variable. The parameter of interest is the ATT (average treatment effect on the treated): $$\theta_0 = E[(Y(1) - Y(0)| D=1, \, T=1 ]$$ identified in Cross Sectional DiD under parallel trend and standard overlap assumption.
+We observe $(Y_i, D_i, T_i, X_i)$ where $D_i \in \{0,1\}$ is the treatment variable and $T_i \in \{0,1\}$ is the time variable. The parameter of interest is the ATT (average treatment effect on the treated): $$\theta_0 = E[(Y(1)_{i} - Y(0)_{i}| D=1, \, T=1 ]$$ identified in Cross Sectional DiD under parallel trend and standard overlap assumption.
 
 
 We use a doubly robust pooled cross section score to get the parameter estimate $\hat{\theta}$ as well as the influence function $\hat{\psi}(\theta)$. To get the score we need to estimate the nuisance parameters:  $$m_0(X) = P(D=1|X)$$ as well as the outcome regressions for each cell $(d,t)$ which is 
 
 $$g_{dt,0}(X) = E[Y|D=d, T=t,X]$$ 
 
-with the given nuisance parameter function. Since the given function does not allow to conditioning on $(D,T,X)$ we constructed a workaround such that we can get $\hat{g}_{11}(X),\hat{g}_{01}(X), \hat{g}_{10}(X), \hat{g}_{00}(X)$. We estimate that by turning $(D,T)$ into a 4-category variable `DT_combined <- 2 * D + Tt`.
+with the given nuisance parameter function. Since the given function does not allow to conditioning on $(D,T,X)$ we constructed a workaround such that we can get $\hat{g}_{11}(X),\hat{g}_{01}(X), \hat{g}_{10}(X), \hat{g}_{00}(X)$. We estimate that by turning $(D,T)$ into a 4-category variable `DT_combined <- 2 * D + Tt`. We used random forests stacked with lasso to estimate the CEF's for the outcome and random forests stacked with logit for the propensity score.
 
 We then constructed $\psi_a$ and $\psi_b$ based on the score provided by the [DoubleML](https://docs.doubleml.org/stable/guide/scores.html#id4) documentation. Using this we identify $\theta$ by solving the linear moment equation: 
 
@@ -784,7 +784,7 @@ The jail estimate of +3% has the opposite sign and is larger in absolute term th
 
 The FTA and recidivism estimates both indicate a decrease of around 3%, which is stronger than estimated by TWFE. The authors propose that these positive effects could stem from the cash-bail having a very negative effect on financially vulnerable groups. For these groups having to pay hundreds or thousands of dollars in bail implies additional hardship and stress, which could decrease the likelihood of the defendant appearing at court and increase the chances of the defendants committing further crimes.  
 
-Overall we can summarize that we found similar results through Double ML as also the authors found through TWFE. Only the coefficient for ROR is significantly different from zero, with the other 3 outcomes being very close to zero and harder to interpret.
+Overall we can summarize that we found similar results through Double ML as also the authors found through TWFE. Only the coefficient for ROR is significantly different from zero, with the other 3 outcomes being very close to zero and harder to interpret. We think that this is mostly due to the fact that all covariates are categorical variables. In this case, ols is a consistent estimation method for the CEF $E[Y|D=d, \, T=t, \,X]$, i.e. the linearity assumption holds.
 
 
 
