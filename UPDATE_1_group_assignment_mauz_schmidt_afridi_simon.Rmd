@@ -1011,14 +1011,23 @@ A major threat to this specific study is that legal actors might "game the syste
 
 The authors test for such a potential change in the legal actors’ responses to the reform by running DiDs with different target parameters, namely the share of defendants whose case the prosecutor completely dropped (Percent of declined), the share whose case they upcharged and the share whose case they downcharged. Furthermore they ran a regression on the weekly number of arrests and cases to test whether the absolute number of defendant changed post-reform. We would have replicated the DiD analyses with Double ML, but unfortunately the required data was not published by the authors. Therefore we will interpret table 2 from the original paper.
 
-#insert table 2 screenshot
 
-![Table 2: Endogenous Responses](screenshot_table_2.png)
+
+<center>
+<img src="screenshot_table_2.png" width="60%" />
+<p><em>Table 2: Endogenous Responses</em></p>
+</center>
 
 Indeed the results show that the different number of arrests and cases as well as the share of declined, up- and downcharged was not influenced by the reform. This confirms that there was no endogenous response from legal actors. Thus the integrity of our DiD identification is maintained.
 
 
 #### Channels of Cash-Bail Reform Effects on Violations
+
+There are two channels imaginable through which the reform could increase the likelihood of eligible defendants violating their bail conditions.
+
+1. **Detainment channel:** individuals who before didn’t pay the bail and were jailed had a zero chance of violating (since in jail), while these same individuals now are released and thus have a positive likelihood of misconduct
+2. **Financial incentive channel:** individuals who paid bail before the reform and were released are now released without bail, and this missing monetary incentive increases likelihood of violating
+
 
 ##### Figure 2: Jail Time Trend
 
@@ -1049,6 +1058,10 @@ ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
   theme(panel.grid.minor = element_blank(),
         plot.title = element_text(hjust = 0.5))
 ```
+
+The authors argue that in the reform analyzed here, the detainment channel effectively falls away, allowing us to isolate the Financial incentive channel. This is because, despite the share of defendants being released without cash bail increasing by 15-20% percentage points, the share of defendants jailed before and after the reform hasn’t changed, as we showed in table 2 and also above in figure X. They argue that this stems from the fact that the same individuals who prior to the reform would have paid the bail to be released are now released without bail, and individuals who would have been jailed then because they didn’t pay bail are now still jailed.  
+
+However, while the reform did not affect the number of defendants detained, it might have affected the composition. It is theoretically possible that the "more likely to violate" individuals were released while "less likely to violate" individuals were detained, or the other way around. If this composition swap happened, our DiD design would capture a mix of the detainment effect and monetary incentive effect, which would change the interpretation of the results which the authors propose. A tentative test for this is checking whether the covariate composition of the released versus detained has changed after the reform. We implement this in a TWFE DiD in order to control for parallel trends in composition change between detained and released.  
 
 ##### Table x: Characterisitcs Composition
 
@@ -1097,5 +1110,11 @@ did_cov_table_formatted <- did_cov_table %>%
 
 did_cov_table_formatted
 ```
+
+Among released defendants, the share which is black increased by 5.3 percentage points more than it did among detained defendants when comparing pre- vs post-reform periods. Similarly, the share of defendants with felony charges decreased by 5.2 percentage points more among released defendants. This suggests that indeed a composition switch took place.   
+
+It seems intuitive that more black defendants were released, since more black defendants are economically vulnerable and would have been detained before the reform is unable to pay even a low bail. Explaining the increase in severe offenders being jailed is more difficult. It is surprising that the reform led to stricter detention for some groups, given the policy was explicitly about leniency.  
+
+The authors interpret their DiD results strictly in terms of monetary incentive effects. The compositional shifts we showed here serve as a warning that simply ignoring the detainment channel is risky. A further test which could provide more insight into the channels is to estimate the effect of the reform using a DiD design, but subsetting the sample to all released individuals. This, however, can only successfully isolate the monetary incentive channel if we observe all covariats which influence violations, which is likely not the case.  
 
 ### 1.3.5 Feedback
