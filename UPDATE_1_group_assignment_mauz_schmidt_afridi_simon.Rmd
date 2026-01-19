@@ -1,11 +1,18 @@
 ---
-title: 'Group Assignment: Replicating Ouss and Stevenson (2023)'
-author: 'Group Members: Julian Schmidt, Laurens Mauz, Isa Afridi, Lukas Simon'
+title: "Group Assignment: Replicating Ouss and Stevenson (2023)"
+author: "Group Members: Julian Schmidt, Laurens Mauz, Isa Afridi, Lukas Simon"
 date: "`r Sys.Date()`"
+header-includes:
+  - |
+    <script>
+    MathJax = {
+      }
+      tex: {
+        packages: {'[+]': ['ams']}
 output:
   html_document:
     toc: true
-    toc_depth: '3'
+    toc_depth: 3
     df_print: paged
   html_notebook:
     toc: true
@@ -13,6 +20,7 @@ output:
     number_sections: false
     theme: cosmo
     highlight: tango
+    mathjax: default
 ---
 
 ```{r setup, include=FALSE}
@@ -584,7 +592,7 @@ doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf 
     cluster_var = cluster_var
   )
   
-  # ------ 5) GATE  -------
+  # ------ 5) GATT  -------
   
   if (heterogeneity) {
     
@@ -667,7 +675,7 @@ doubleML_did_cs_gate <- function(data, y_var, d_var, t_var, x_vars, methods, cf 
 ```
 
 ```{r}
-# data preparation (was don alread in did_twfe, but I addedyq_numeric)
+# data preparation 
 CashBail <- read_stata("CashBail.dta") %>%
   mutate(
     yq_numeric = as.numeric(as.factor(yq)),
@@ -746,7 +754,7 @@ Y.hat.d = list(
 ))
 ```
 
-```{r eval=FALSE}
+```{r}
 # Store the estimation results for each outcome variable
 dml_gate_results <- list()
 set.seed(1234) 
@@ -777,9 +785,9 @@ The jail estimate of +3% has the opposite sign and is larger in absolute term th
 
 The FTA and recidivism estimates both indicate a decrease of around 3%, which is stronger than estimated by TWFE. The authors propose that these positive effects could stem from the cash-bail having a very negative effect on financially vulnerable groups. For these groups having to pay hundreds or thousands of dollars in bail implies additional hardship and stress, which could decrease the likelihood of the defendant appearing at court and increase the chances of the defendants committing further crimes.
 
-Overall we can summarize that we found similar results through Double ML as also the authors found through TWFE. Only the coefficient for ROR is significantly different from zero, with the other 3 outcomes being very close to zero and harder to interpret. We think that this is mostly due to the fact that all covariates are categorical variables. In this case, ols is a consistent estimation method for the CEF $E[Y|D=d, \, T=t, \,X]$, i.e. the linearity assumption holds.
+Overall we can summarize that we found similar results through Double ML as also the authors found through TWFE. Only the coefficient for ROR is significantly different from zero, with the other 3 outcomes being very close to zero and harder to interpret. We think that this is mostly due to the fact that all covariates are categorical variables. In this case, ols is a consistent estimation method for the CEFs $E[Y|D=d, \, T=t, \,X]$, i.e. the linearity assumption holds.
 
-```{r eval=FALSE}
+```{r}
 
 # Extract ATT from first GATT variable results (they all have the same ATT)
 final_dml_table <- do.call(rbind, lapply(all_outcomes, function(y) {
@@ -834,7 +842,7 @@ Solving the group-specific moment condition gives $$
 \tau_g = -\frac{\mathbb{E}[I_g \psi_b]}{\mathbb{E}[I_g \psi_a]},
 $$ which defines the group average treatment effect on the treated (GATT) implied by the same orthogonal score used to identify the overall ATT.
 
-```{r eval=FALSE}
+```{r}
 # Summary Table for GATT, dependent variable = hasfta
 groups <- c("black_not_hisp", "white_not_hisp", "hisp")
 summary_table_hasfta <- data.frame(
@@ -867,7 +875,7 @@ summary_table_hasfta_formatted <- summary_table_hasfta %>%
 
 ```
 
-```{r eval=FALSE}
+```{r}
 # Summary Table for GATT, dependent variable = Rec6mo
 summary_table_Rec6mo <- data.frame(
     Group = c("black", "white", "hispanic"),
@@ -897,7 +905,7 @@ summary_table_Rec6mo_formatted <- summary_table_Rec6mo %>%
 
 ```
 
-```{r eval=FALSE}
+```{r}
 # Summary tabble DiD GATT, dep. variable = ROR
 summary_table_ROR <- data.frame(
     Group = c("black", "white", "hispanic"),
@@ -930,7 +938,7 @@ summary_table_ROR_formatted <- summary_table_ROR %>%
 
 ```
 
-```{r eval=FALSE}
+```{r}
 # Summary Table for DiiD GATT, dep. variable = Jail3days
 summary_table_Jail3days <- data.frame(
     Group = c("black", "white", "hispanic"),
@@ -962,31 +970,32 @@ summary_table_Jail3days_formatted <- summary_table_Jail3days %>%
 
 ```
 
-```{r eval=FALSE}
+```{r}
 summary_table_hasfta_formatted 
 ```
 
 *Table 3: GATT estimates for failure to appear*
 
-```{r eval=FALSE}
+```{r}
 summary_table_Rec6mo_formatted 
 ```
 
 *Table 4: GATT estimates for recindivism*
 
-```{r eval=FALSE}
+```{r}
 summary_table_ROR_formatted 
 ```
 
 *Table 5: GATT estimates for shared of defendants released without bail (ROR)*
 
-```{r eval=FALSE}
+```{r}
 summary_table_Jail3days_formatted 
 ```
 
 *Table 6: GATT estimates for share of defendants jailed*
 
-For brevity reasons we will here only interpret the heterogeneous effect estimates for the two violation outcomes, i.e. recidivism and failure to appear. Interestingly the estimates are similar for both of these outcomes. The reform seems to have been the most beneficial for white defendants, where the share of violators was lowered by 5 percentage points. Furthermore the share of black defendants violating the recidivism condition decreased by 2.6 percentage points. The other coefficients are far from statistically significant.
+For brevity reasons we will here only interpret the heterogeneous effect estimates for the two violation outcomes, i.e. recidivism and failure to appear. Interestingly the estimates are similar for both of these outcomes. The reform seems to have been the most beneficial for white defendants, where the share of violators was lowered by 5 percentage points. Furthermore the share of black defendants violating the recidivism condition decreased by 2.6 percentage points. The other coefficients are far from statistically significant. One important caveat of the GATT interpretation is the role of baseline rates in the pool of defendants eligible to benefit from the reform. While the absolute reduction in violations may be smaller for Black defendants, their lower pre-reform ROR rates mean they often comprise a larger share of the population that could have been impacted by the policy change. Consequently, focusing solely on percentage point shifts can be misleading if it fails to account for how disproportionately certain groups were excluded from release benefits prior to the reform.
+
 
 ### 1.3.4 Reflection on DiD Assumptions
 
@@ -1005,6 +1014,303 @@ $$
 $$
 
 If the no-anticipation and parallel trends hold then being eligible should only make a difference for the post-treatment months.
+
+```{r}
+### Create Month Variable Relative to Reform
+
+# Reform date: February 22, 2018
+# In Stata dates, this is the number of days since January 1, 1960
+reform_date <- as.Date("2018-02-22")
+
+# Create relative month variable based on Stata code logic
+CashBail <- CashBail %>%
+  mutate(
+    # Convert baildate to R date (Stata dates are days since Jan 1, 1960)
+    baildate_r = as.Date(baildate, origin = "1960-01-01"),
+    # Days relative to reform
+    days_relative = as.numeric(baildate_r - reform_date),
+    # Create month bins following Stata logic
+    # pre1 (becomes pre0): -30 to -1 days (reference month -1)
+    # pre2 (becomes pre1): -60 to -31 days (month -2)
+    # etc.
+    rel_month = case_when(
+      days_relative >= -30 & days_relative < 0 ~ -1,    # Reference period (Month -1)
+      days_relative >= -60 & days_relative < -30 ~ -2,  # Month -2
+      days_relative >= -90 & days_relative < -60 ~ -3,  # Month -3
+      days_relative >= -120 & days_relative < -90 ~ -4, # Month -4
+      days_relative >= -150 & days_relative < -120 ~ -5,# Month -5
+      days_relative >= -180 & days_relative < -150 ~ -6,# Month -6
+      days_relative > 0 & days_relative <= 30 ~ 0,      # Month 0 (first month post)
+      days_relative > 30 & days_relative <= 60 ~ 1,     # Month 1
+      days_relative > 60 & days_relative <= 90 ~ 2,     # Month 2
+      days_relative > 90 & days_relative <= 120 ~ 3,    # Month 3
+      days_relative > 120 & days_relative <= 150 ~ 4,   # Month 4
+      TRUE ~ NA_real_
+    )
+  )
+
+# Check distribution
+table(CashBail$rel_month, useNA = "ifany")
+```
+
+```{r}
+#------------------------------------------------------------------------------
+#                   Double ML Event Study DiD 
+#------------------------------------------------------------------------------
+
+doubleML_event_study <- function(data, y_var, d_var, month_var, x_vars, methods, 
+                                  cf = 5, cluster_var = NULL,
+                                  base_month = -1, 
+                                  pre_months = c(-6, -5, -4, -3, -2),
+                                  post_months = c(0, 1, 2, 3, 4)) {
+  
+  # All months to estimate (excluding base month)
+  all_months <- c(pre_months, post_months)
+  
+  # Initialize results storage
+  results <- data.frame(
+    month = numeric(),
+    estimate = numeric(),
+    se = numeric(),
+    ci_lower = numeric(),
+    ci_upper = numeric(),
+    n_total = numeric(),
+    n_month_k = numeric(),
+    n_base = numeric()
+  )
+  
+  # Get base month data
+  base_data <- data %>% filter(!!sym(month_var) == base_month)
+  n_base <- nrow(base_data)
+  
+  message(sprintf("Base month %d: N = %d", base_month, n_base))
+  
+  # Loop through each month k
+  for (k in all_months) {
+    
+    message(sprintf("\n--- Estimating Month %d vs Base Month %d ---", k, base_month))
+    
+    # Filter to only month k and base month
+    slice_data <- data %>%
+      filter(!!sym(month_var) %in% c(k, base_month)) %>%
+      mutate(
+        # T = 1 if month k, T = 0 if base month
+        T_event = as.numeric(!!sym(month_var) == k)
+      )
+    
+    n_month_k <- sum(slice_data$T_event == 1)
+    n_slice <- nrow(slice_data)
+    
+    message(sprintf("  Month %d: N = %d, Base: N = %d, Total slice: N = %d", 
+                    k, n_month_k, n_slice - n_month_k, n_slice))
+    
+    # Check if we have enough observations
+    if (n_month_k < 50 || (n_slice - n_month_k) < 50) {
+      warning(sprintf("Month %d has insufficient observations. Skipping.", k))
+      results <- rbind(results, data.frame(
+        month = k,
+        estimate = NA,
+        se = NA,
+        ci_lower = NA,
+        ci_upper = NA,
+        n_total = n_slice,
+        n_month_k = n_month_k,
+        n_base = n_slice - n_month_k
+      ))
+      next
+    }
+    
+    # Run Double ML DiD on this slice
+    tryCatch({
+      dml_result <- doubleML_did_cs_gate(
+        data = slice_data,
+        y_var = y_var,
+        d_var = d_var,
+        t_var = "T_event",  # Our constructed time variable
+        x_vars = x_vars,
+        methods = methods,
+        cf = cf,
+        cluster_var = cluster_var,
+        heterogeneity = FALSE
+      )
+      
+      # Store results
+      results <- rbind(results, data.frame(
+        month = k,
+        estimate = dml_result$coefficients["ATT"],
+        se = dml_result$se,
+        ci_lower = dml_result$ci_lower,
+        ci_upper = dml_result$ci_upper,
+        n_total = n_slice,
+        n_month_k = n_month_k,
+        n_base = n_slice - n_month_k
+      ))
+      
+      message(sprintf("  ATT = %.4f (SE = %.4f)", 
+                      dml_result$coefficients["ATT"], dml_result$se))
+      
+    }, error = function(e) {
+      warning(sprintf("Error for month %d: %s", k, e$message))
+      results <<- rbind(results, data.frame(
+        month = k,
+        estimate = NA,
+        se = NA,
+        ci_lower = NA,
+        ci_upper = NA,
+        n_total = n_slice,
+        n_month_k = n_month_k,
+        n_base = n_slice - n_month_k
+      ))
+    })
+  }
+  
+  # Add the reference period (month -1) with estimate = 0
+  results <- rbind(results, data.frame(
+    month = base_month,
+    estimate = 0,
+    se = 0,
+    ci_lower = 0,
+    ci_upper = 0,
+    n_total = n_base,
+    n_month_k = n_base,
+    n_base = n_base
+  ))
+  
+  # Sort by month
+  results <- results %>% arrange(month)
+  rownames(results) <- NULL
+  
+  # Return results
+  out <- list(
+    results = results,
+    y_var = y_var,
+    d_var = d_var,
+    base_month = base_month,
+    pre_months = pre_months,
+    post_months = post_months
+  )
+  
+  class(out) <- "doubleML_event_study"
+  return(out)
+}
+
+
+#------------------------------------------------------------------------------
+#                   Plotting Function for Event Study
+#------------------------------------------------------------------------------
+
+plot_event_study <- function(es_result, title = NULL, 
+                              ylim = c(-0.15, 0.2),
+                              show_ci = TRUE) {
+  
+  library(ggplot2)
+  
+  df <- es_result$results
+  
+  if (is.null(title)) {
+    title <- paste("Event Study:", es_result$y_var)
+  }
+  
+  # Create the plot
+  p <- ggplot(df, aes(x = month, y = estimate)) +
+    geom_hline(yintercept = 0, linetype = "solid", color = "gray50") +
+    geom_vline(xintercept = -0.5, linetype = "dashed", color = "gray50") +
+    geom_point(size = 3) +
+    geom_line() +
+    labs(
+      title = title,
+      x = "Months Relative to Reform (Feb. 22, 2018)",
+      y = "ATT Estimate"
+    ) +
+    scale_x_continuous(breaks = seq(-6, 4, by = 1)) +
+    coord_cartesian(ylim = ylim) +
+    theme_minimal() +
+    theme(
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(hjust = 0.5, face = "bold")
+    )
+  
+  if (show_ci) {
+    p <- p + geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), 
+                           width = 0.2, alpha = 0.7)
+  }
+  
+  return(p)
+}
+```
+
+
+
+
+```{r, message=FALSE, warning=FALSE}
+### Run Event Study for All Outcomes
+# Filter data to only include observations within the event study window
+CashBail_es <- CashBail %>%
+  filter(!is.na(rel_month))
+
+#message(sprintf("Event study sample: N = %d", nrow(CashBail_es)))
+
+# Store event study results
+event_study_results <- list()
+
+set.seed(1234)
+
+# Run event study for each outcome
+for (y in all_outcomes) {
+  # message("\n\n========================================")
+  # message("EVENT STUDY FOR OUTCOME: ", y)
+  # message("========================================")
+  
+  event_study_results[[y]] <- doubleML_event_study(
+    data = CashBail_es,
+    y_var = y,
+    d_var = "EligibleOffense",
+    month_var = "rel_month",
+    x_vars = covariates,
+    methods = my_methods,
+    cf = 5,
+    cluster_var = "off",
+    base_month = -1,
+    pre_months = c(-6, -5, -4, -3, -2),
+    post_months = c(0, 1, 2, 3, 4)
+  )
+}
+```
+
+```{r, fig.width=10, fig.height=8}
+library(ggplot2)
+library(gridExtra)
+
+# Create individual plots
+plots <- list()
+
+outcome_labels <- c(
+  "ROR" = "Released on Own Recognizance",
+  "Jail3days" = "Jail > 3 Days",
+  "hasfta" = "Failure to Appear",
+  "Rec6mo" = "Recidivism (6 months)"
+)
+
+for (y in all_outcomes) {
+  plots[[y]] <- plot_event_study(
+    event_study_results[[y]], 
+    title = outcome_labels[y],
+    ylim = c(-0.15, 0.2)
+  )
+}
+
+# Combine plots
+combined_plot <- grid.arrange(
+  plots[["ROR"]], 
+  plots[["Jail3days"]], 
+  plots[["hasfta"]], 
+  plots[["Rec6mo"]],
+  ncol = 2,
+  top = "Double ML Event Study DiD"
+)
+
+combined_plot
+```
 
 Concerning the parallel trends assumption the plots show mixed evidence. Only for the RoR outcome it is clearly recognizable that the post-treatment DiD coefficients are clearly more different from zero than the lagged months before the treatment. Especially for the recidivism trends do not seem parallel. In the 5 months before the reform the eligible group experienced a decline in recidivism relative to the trend in the control group.
 
@@ -1124,3 +1430,13 @@ It seems intuitive that more black defendants were released, since more black de
 The authors interpret their DiD results strictly in terms of monetary incentive effects. The compositional shifts we showed here serve as a warning that simply ignoring the detainment channel is risky. A further test which could provide more insight into the channels is to estimate the effect of the reform using a DiD design, but subsetting the sample to all released individuals. This, however, can only successfully isolate the monetary incentive channel if we observe all covariats which influence violations, which is likely not the case.
 
 ### 1.3.5 Feedback
+
+Difficulties of applying Double ML
+Both due to our prior familiarity with OLS and the inherently higher complexity Double ML, implementing the estimation process with Double ML was more difficult and required more theoretical rigour. One example of a challenge we had was correctly implementing clustered errors required with our custom Double ML function. Another example is the GATT estimation which was non-trivial. This is because for the subgroup analysis we could not rely on simple conditioning or pseudo-outcome regressions without violating the moment condition that identifies the DiD ATT. 
+
+Difficulties of DiD
+As with any other causal inference method the most challenging is ensuring that the identifying assumption hold. In our case the event study analysis revealed  that trends only seem partially parallel, even after conditioning on covariates. Furthermore, the primary goal of this research was to understand the isolated effect of no more cash-bail on defendants. It is likely, however, that also the legal actors involved changed their overall behaviour (endogenous responses) thus also affecting outcomes. Strictly speaking this is not a violation of the DiD assumptions but rather a valid channel through which the reform affects outcomes. Nonetheless this mixture of different effect channels makes it hard to derive policy learning from the results.
+
+Difficulties with Nuisance Parameter package
+Sometimes the NP package sometimes gave cryptic error messages that were hard to interpret, which seemed to stem from functionalities the package imports. For us also XGBoost still didn’t work after new github update, but we also switched to random forest relatively fast, so this might have been on us not trying enough. Lastly, it might be nice for users who want to implement DiD, if the Nuisance Parameter package had an option to estimates E(Y|D=d, T=t, X) directly without a work around.
+
