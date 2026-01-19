@@ -80,6 +80,7 @@ The cash bail system thus is supposed to ensure individuals appear for the heari
 The reform analysed in this paper is a change in the policy of Philadelphia’s public prosecutors, who in February 2018 recommended to no longer require cash-bail for many low-level offenses. The motivation of this and similar reforms in other jurisdictions is to protect economically vulnerable, often minority groups which cannot afford to post cash-bail. If the cash-bail system is successful in motivating individuals to not violate the bail conditions, then releasing defendants without financial incentive should lead to more violations. This paper thus uses DiD to investigate whether eligible defenders (i.e. defenders eligible for the new bail policy, who committed low-level crimes) who now no longer need to post bail are after the reform more likely to miss court hearings and commit further crimes.
 
 Importantly, the reform entailed the Philadelphia prosecutor only recommending this change in bail policy instead of simply deciding, because the decision whether and how much cash-bail is required is made by bail magistrates, who have the ultimate discretion here. While this discretion with magistrates makes it thus imaginable that this reform did not actually change anything, figure 1 shows that the share of defendants released without cash-bail (the correct legal term being Release on own Recognizance, or ROR) increased significantly, by around 15-20 percentage points. In the replication section, we will test this increase in ROR also through a DiD design.
+We can thus confirm that the reform had significant measure effects, which the authors argue were not result of a change in formal rules, but rather of a change in norms.
 
 
 ```{r}
@@ -229,7 +230,6 @@ p_ineligible <- ggplot(biweekly_ror_inel, aes(x = W2, y = Rate)) +
   
 ```
 
-##### Figure 1a: ROR Time Trend & Figure 1b: ROR for Ineligible Cases
 
 ```{r}
 
@@ -237,8 +237,7 @@ plot_grid(p_eligible, p_ineligible,
           ncol = 2, nrow = 1)
 
 ```
-The authors argue that the DA led reform thus did not affect bail policy through a change in formal rules, but rather through a change in norms.
-
+*Figure 1a: ROR Time Trend for eligible (left) and ineligible right) cases*
 
 
 #### Target Parameters and Controls
@@ -406,7 +405,6 @@ table_5 <- etable(m5_1, m5_2, m5_3, m5_4,
 
 ```
 
-#### Table 3: DiD Estimates of policy effect on ROR and Jail & Table 5: DiD Estimates of policy effect on FTA and Recidivism
 
 ```{r}
 table_6 <- etable(
@@ -431,7 +429,7 @@ library(kableExtra)
 
 table_6 %>%
   as.data.frame() %>%
-  kbl(caption = "Table x: DiD Estimates of ROR, Jail, FTA, and Recidivism",
+  kbl(#caption = "Table 1: DiD Estimates of ROR, Jail, FTA, and Recidivism",
       booktabs = TRUE, 
       align = "lcccc",
       # This removes the extra column name row kable sometimes adds
@@ -439,6 +437,9 @@ table_6 %>%
   kable_classic(full_width = F, html_font = "Cambria") 
 
 ```
+*Table 1*: DiD Estimates of ROR, Jail, FTA, and Recidivism
+
+
 We will not interpret these TWFE DiD results by themselves here, but rather use them to benchmark our Double ML result in the following section.
 
 #### DiD Double ML
@@ -721,12 +722,12 @@ covariates <- c(
 
 # ML Methods
 my_methods <- list(D.hat = list(
-  m1 = list(method = "ranger_prop", tune = "fold"),
+  m1 = list(method = "ranger_prop", tune = "fold"), 
   m2 = list(method = "logit")
 ),
 
 Y.hat.d = list(
-  m1 = list(method = "ranger", tune = "fold"),
+  m1 = list(method = "ranger",tune = "fold"), 
   m2 = list(method = "lasso")
 ))
 ```
@@ -741,7 +742,7 @@ set.seed(1234)
 for(y in all_outcomes) {
   message("Running ATT estimation for outcome: ", y)
   
-  dml_results[[y]] <- doubleML_did_cs_gate(
+  dml_gate_results[[y]] <- doubleML_did_cs_gate(
     data = CashBail,
     y_var = y,
     d_var = "EligibleOffense",
@@ -767,9 +768,8 @@ Overall we can summarize that we found similar results through Double ML as also
 
 
 
-#### DML DiD estimates of ATT and GATT
 
-##### Table ?: ATT Results 
+
 ```{r eval=FALSE}
 
 # Extract ATT from first GATT variable results (they all have the same ATT)
@@ -804,6 +804,7 @@ final_dm_rtable_beautiful <- final_dml_table %>%
 
 final_dm_rtable_beautiful
 ```
+*Table 2: ATT estimates*
 
 #### Heterogeneity
 Furthermore we conducted a heterogeneity analysis.
@@ -958,28 +959,29 @@ summary_table_Jail3days_formatted <- summary_table_Jail3days %>%
 
 ```
 
-##### Table ?: GATT for Dependent Variablehasfta
+ 
 ```{r eval=FALSE}
 summary_table_hasfta_formatted 
 ```
+*Table 3: GATT estimates for failure to appear*
 
 
-##### Table ?: GATT for Dependent Variable Rec6mo
 ```{r eval=FALSE}
 summary_table_Rec6mo_formatted 
 ```
+*Table 4: GATT estimates for recindivism*
 
-
-##### Table ?: GATT for Dependent Variable ROR
 ```{r eval=FALSE}
 summary_table_ROR_formatted 
 ```
+*Table 5: GATT estimates for shared of defendants released without bail (ROR)*
 
-
-##### Table ?: GATT for Dependent Variable Jail
 ```{r eval=FALSE}
 summary_table_Jail3days_formatted 
 ```
+*Table 6: GATT estimates for share of defendants jailed*  
+
+
 For brevity reasons we will here only interpret the heterogeneous effect estimates for the two violation outcomes, i.e. recidivism and failure to appear. Interestingly the estimates are similar for both of these outcomes. The reform seems to have been the most beneficial for white defendants, where the share of violators was lowered by 5 percentage points. Furthermore the share of black defendants violating the recidivism condition decreased by 2.6 percentage points. The other coefficients are far from statistically significant.
 
 
@@ -991,10 +993,10 @@ The district attorney, who would pass the no-cash bail reform in February 2018, 
 The parallel trends assumption on the other hand would be violated if there were other reforms happening concurrently in Philadelphia. In that case even being able to show that prior to the reform trends were parallel would not be enough. The authors explain that there was only one other judicial reform around that time. On February 15, the DA’s office announced a change in charging practices for marijuana possession, retail theft, and sex work. These cases are therefore removed from the analysis, which should alleviate the problem.
 
 #### Event Study DiD
-After considering the policy context and removing cases that were affected by the parallel reform, we run an event-study version of the DiD to confirm that the no-anticipation and parallel trends assumption are fulfilled at least in the past. The authors do this by running a TWFE with monthly lags and leads. We implement the event study using Double ML.
+After considering the policy context and removing cases that were affected by the parallel reform, we run an event-study version of the DiD to confirm that the no-anticipation and parallel trends assumption are fulfilled at least in the past. The authors do this by running a TWFE with monthly lags and leads, as shown in equation (2). We implement the event study using Double ML.
 
 $$
-Y_{it} = \alpha_{t} + \beta Eligible_{i} + \sum_{t \neq -1} \delta_{t} Eligible_{i} + \theta \mathbf{X}_{i} + \epsilon_{i}.
+(2) Y_{it} = \alpha_{t} + \beta Eligible_{i} + \sum_{t \neq -1} \delta_{t} Eligible_{i} + \theta \mathbf{X}_{i} + \epsilon_{i}.
 $$
 
 
@@ -1009,13 +1011,13 @@ Overall we can summarize that trends seem to be relatively but not perfectly par
 #### Endogenous Responses
 A major threat to this specific study is that legal actors might "game the system". For example: Police might change who they arrest for "eligible" vs. "ineligible" crimes, or prosecutors might "upcharge" a defendant (assigning a more serious lead charge) to make them ineligible for the No-Cash-Bail policy. This would undermine the identification result of the DiD method, because the groups we compare in the pre- and post period are no longer the same. Controlling for some covariates as we already do wouldn’t solve this problem, as an endogenous change in arrest or charging patterns likely depends on important unobserved covariates like the manner in which the defendant presents themselves during the bail hearing.
 
-The authors test for such a potential change in the legal actors’ responses to the reform by running DiDs with different target parameters, namely the share of defendants whose case the prosecutor completely dropped (Percent of declined), the share whose case they upcharged and the share whose case they downcharged. Furthermore they ran a regression on the weekly number of arrests and cases to test whether the absolute number of defendant changed post-reform. We would have replicated the DiD analyses with Double ML, but unfortunately the required data was not published by the authors. Therefore we will interpret table 2 from the original paper.
+The authors test for such a potential change in the legal actors’ responses to the reform by running DiDs with different target parameters, namely the share of defendants whose case the prosecutor completely dropped (Percent of declined), the share whose case they upcharged and the share whose case they downcharged. Furthermore they ran a regression on the weekly number of arrests and cases to test whether the absolute number of defendant changed post-reform. We would have replicated the DiD analyses with Double ML, but unfortunately the required data was not published by the authors. Therefore we will interpret Table 2 from the original paper, which in this report is Table 7.
 
 
 
 <center>
 <img src="screenshot_table_2.png" width="60%" />
-<p><em>Table 2: Endogenous Responses</em></p>
+<p><em>Table 7: Testing for endogenous responses of the legal actors, taken from Ouss and Stevenson (2023) </em></p>
 </center>
 
 Indeed the results show that the different number of arrests and cases as well as the share of declined, up- and downcharged was not influenced by the reform. This confirms that there was no endogenous response from legal actors. Thus the integrity of our DiD identification is maintained.
@@ -1029,7 +1031,6 @@ There are two channels imaginable through which the reform could increase the li
 2. **Financial incentive channel:** individuals who paid bail before the reform and were released are now released without bail, and this missing monetary incentive increases likelihood of violating
 
 
-##### Figure 2: Jail Time Trend
 
 ```{r}
 ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
@@ -1052,18 +1053,18 @@ ggplot(subset(biweekly_avg, Outcome == "Jail"), aes(x = W2, y = Rate)) +
                      labels = function(x) x / 2) +
   
   theme_minimal() +
-  labs(title = "Jail",
+  labs(title = "weekly share of defendants jailed",
     x = "Months relative to Feb. 22",
        y = "Bi-weekly Jail Rate") +
   theme(panel.grid.minor = element_blank(),
         plot.title = element_text(hjust = 0.5))
 ```
+*Figure 2: Share of defendants jailed over time*
 
-The authors argue that in the reform analyzed here, the detainment channel effectively falls away, allowing us to isolate the Financial incentive channel. This is because, despite the share of defendants being released without cash bail increasing by 15-20% percentage points, the share of defendants jailed before and after the reform hasn’t changed, as we showed in table 2 and also above in figure X. They argue that this stems from the fact that the same individuals who prior to the reform would have paid the bail to be released are now released without bail, and individuals who would have been jailed then because they didn’t pay bail are now still jailed.  
+The authors argue that in the reform analyzed here, the detainment channel effectively falls away, allowing us to isolate the Financial incentive channel. This is because, despite the share of defendants being released without cash bail increasing by 15-20% percentage points, the share of defendants jailed before and after the reform hasn’t changed, as we shown in the Double ML DiD results in Table 2, as well as above in Figure 2. They argue that this stems from the fact that the same individuals who prior to the reform would have paid the bail to be released are now released without bail, and individuals who would have been jailed then because they didn’t pay bail are now still jailed.  
 
 However, while the reform did not affect the number of defendants detained, it might have affected the composition. It is theoretically possible that the "more likely to violate" individuals were released while "less likely to violate" individuals were detained, or the other way around. If this composition swap happened, our DiD design would capture a mix of the detainment effect and monetary incentive effect, which would change the interpretation of the results which the authors propose. A tentative test for this is checking whether the covariate composition of the released versus detained has changed after the reform. We implement this in a TWFE DiD in order to control for parallel trends in composition change between detained and released.  
 
-##### Table x: Characterisitcs Composition
 
 ```{r}
 covars_to_test <- c("defendantageatarrest", "male", "defendantisblack",
@@ -1110,6 +1111,7 @@ did_cov_table_formatted <- did_cov_table %>%
 
 did_cov_table_formatted
 ```
+*Table 8: DiD test for covariate composition changes in released and jailed defendants*  
 
 Among released defendants, the share which is black increased by 5.3 percentage points more than it did among detained defendants when comparing pre- vs post-reform periods. Similarly, the share of defendants with felony charges decreased by 5.2 percentage points more among released defendants. This suggests that indeed a composition switch took place.   
 
