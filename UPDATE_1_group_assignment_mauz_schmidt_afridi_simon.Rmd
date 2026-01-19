@@ -464,10 +464,10 @@ To get estimates of $\theta$, we replaced the population averages with sample me
 
 $$ IF_i = \frac{-1}{E[\psi_a]} \cdot \psi_i(\hat{\theta})$$ 
 
-To estimate is, we also replaced the population averages with sample means. We then used the estimated values for the influence function to get standard error for our ATT estimator. To recover clutered standard error, we used 
+To estimate is, we also replaced the population averages with sample means. We then used the estimated values for the influence function to get standard error for our ATT estimator. To recover clustered variance, we used 
 
 $$
-\hat{se}(\hat{\theta}) =  \sum_{k=1}^{C} (\sum_{i \in G_{k}} IF_{i})^{2}
+\hat{var}(\hat{\theta}) =  1/n\sum_{k=1}^{C} (\sum_{i \in G_{k}} IF_{i})^{2}
 $$
 
 where C is the number of clusters and $G_{k}$ is the k-th cluster.
