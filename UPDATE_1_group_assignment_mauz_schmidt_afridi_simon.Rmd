@@ -442,8 +442,8 @@ We observe $(Y_i, D_i, T_i, X_i)$ where $D_i \in \{0,1\}$ is the treatment varia
 We thereby use a doubly robust AIPW scores to get the parameter estimate $\hat{\theta}$ as well as the influence function $\hat{\psi}_i(\theta)$. In order to be able to use AIPW we need to estimate the nuisance parameter propensity $$m_0(X) = P(D=1|X) \quad \forall D\in \{0,1\}$$ as well as the outcome regressions for each cell $(d,t)$ which is $$g_{dt,0}(X) = E[Y|D=d, T=t,X]$$ by the given nuisance parameter function. Since the given function does not allow to conditioning on $(D,T,X)$ we need constructed a workaround such that we can get $\hat{g}_{11}(X),\hat{g}_{01}(X), \hat{g}_{10}(X), \hat{g}_{00}(X)$. We estimate that by turning $(D,T)$ into a 4-category label `DT_combined <- 2 * D + Tt`.
 
 We then constructed $\psi_a$ and $\psi_b$ based on the score provided by the [DoubleML](https://docs.doubleml.org/stable/guide/scores.html#id4) documentation. Using this we solve proceeded by solving the linear moment equation: $$ 
-E[\psi_a \theta + \theta_b] = 0 \Rightarrow \hat{\theta} = - \frac{E_i[\psi_b]}{E_i[\psi_a]}
-$$ Afterward we constructed the influence function $$ IF_i = \frac{-1}{E[\psi_a]} \cdot \psi$$ and used it to get clustered standard errors.
+E[\psi_a \theta + \psi_b] = 0 \Rightarrow \hat{\theta} = - \frac{E_i[\psi_b]}{E_i[\psi_a]}
+$$ Afterward we constructed the influence function $$ IF_i = \frac{-1}{E[\psi_a]} \cdot \psi_i(\hat{\theta})$$ and used it to get clustered standard errors.
 
 #### Heterogeneity
 
